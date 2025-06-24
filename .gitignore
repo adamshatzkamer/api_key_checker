@@ -4,3 +4,5 @@ backup.api_keys copy.db
 *api_keys copy.db
 *.db.bak
 *copy.db
+.backup.api_keys.db
+backup.api_keys.db
