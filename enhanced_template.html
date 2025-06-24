@@ -521,9 +521,9 @@
                                 </div>
                                 <div class="key-display-container">
                                     <div class="key-display-text" id="key-display-${key.id}">
-                                        ${key.key}
+                                        ${key.masked_key}
                                     </div>
-                                    <button class="key-toggle-btn" onclick="toggleKeyVisibility('${key.id}', '${key.key}')">
+                                    <button class="key-toggle-btn" onclick="toggleKeyVisibility('${key.id}', '${key.full_key}')">
                                         👁️ Show
                                     </button>
                                     <button class="key-copy-btn" id="copy-btn-${key.id}" onclick="copyKey('${key.id}')" disabled>
