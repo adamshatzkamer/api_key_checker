@@ -1,1287 +1,1079 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenAI API Usage Dashboard</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-        .container { max-width: 1400px; margin: 0 auto; }
-        .header { text-align: center; color: white; margin-bottom: 30px; }
-        .header h1 { font-size: 2.5rem; margin-bottom: 10px; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-        .header p { font-size: 1.1rem; opacity: 0.9; }
-        .dashboard { background: white; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); padding: 30px; margin-bottom: 20px; }
+def fetch_openai_usage(api_key, days=30):
+    """Fetch usage data from various AI API providers"""
+    key_info = detect_key_type(api_key)
+    provider = key_info['provider']
+    key_type = key_info['type']
+    
+    print(f"Detected provider: {provider}, type: {key_type}")
+    
+    if provider == 'openai':
+        return fetch_openai_usage(api_key, days)
+    elif provider == 'anthropic':
+        return fetch_anthropic_usage(api_key, days)
+    elif provider == 'brave':
+        return fetch_brave_usage(api_key, days)
+    else:
+        return {
+            'status': 'unsupported',
+            'message': f'Unsupported API provider: {provider}',
+            'error': f'API key format not recognized: {api_key[:10]}...'
+        }
+
+def fetch_anthropic_usage(api_key, days=30):
+    """Fetch usage data from Anthropic API"""
+    headers = {
+        'x-api-key': api_key,
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01'
+    }
+    
+    result = {'provider': 'anthropic'}
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing Anthropic key: {key_preview}")
+    
+    # Test basic access with a simple completion
+    try:
+        print(f"Testing Anthropic API access...")
+        test_response = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers=headers,
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "Hi"}]
+            },
+            timeout=10
+        )
         
-        /* Navigation Tabs */
-        .nav-tabs { display: flex; gap: 0; margin-bottom: 30px; border-bottom: 1px solid #e5e7eb; }
-        .nav-tab { background: none; border: none; padding: 12px 24px; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s ease; }
-        .nav-tab.active { color: #667eea; border-bottom-color: #667eea; }
-        .nav-tab:hover { background: #f8fafc; }
+        print(f"Anthropic API response: {test_response.status_code}")
+        if test_response.status_code == 200:
+            print(f"✓ Anthropic API access works!")
+            result['status'] = 'success'
+            result['basic_access'] = True
+            # Note: Anthropic doesn't have a public usage API like OpenAI
+            result['message'] = 'Anthropic API key is working (no usage API available)'
+        else:
+            print(f"✗ Anthropic API failed: {test_response.status_code}")
+            result['status'] = 'error'
+            result['error'] = f"Anthropic API failed: {test_response.status_code} - {test_response.text}"
+            result['error_details'] = get_error_details(test_response.text, test_response.status_code)
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Anthropic API network error: {str(e)}")
+        result['status'] = 'error'
+        result['error'] = f"Anthropic API network error: {str(e)}"
+        result['error_details'] = get_error_details(str(e), None)
+    
+    return result
+
+def fetch_brave_usage(api_key, days=30):
+    """Fetch usage data from Brave Search API"""
+    headers = {
+        'X-Subscription-Token': api_key,
+        'Accept': 'application/json'
+    }
+    
+    result = {'provider': 'brave'}
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing Brave Search key: {key_preview}")
+    
+    # Test basic access with a simple search
+    try:
+        print(f"Testing Brave Search API access...")
+        test_response = requests.get(
+            'https://api.search.brave.com/res/v1/web/search',
+            headers=headers,
+            params={
+                'q': 'test',
+                'count': 1
+            },
+            timeout=10
+        )
         
-        /* Tab Content */
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        print(f"Brave Search API response: {test_response.status_code}")
+        if test_response.status_code == 200:
+            print(f"✓ Brave Search API access works!")
+            result['status'] = 'success'
+            result['basic_access'] = True
+            result['message'] = 'Brave Search API key is working'
+            
+            # Try to get usage information if available
+            try:
+                usage_response = requests.get(
+                    'https://api.search.brave.com/res/v1/usage',
+                    headers=headers,
+                    timeout=10
+                )
+                if usage_response.status_code == 200:
+                    print(f"✓ Brave usage data available!")
+                    result['usage'] = usage_response.json()
+                else:
+                    print(f"✗ Brave usage API not available: {usage_response.status_code}")
+            except:
+                print(f"✗ Brave usage API not accessible")
+                
+        else:
+            print(f"✗ Brave Search API failed: {test_response.status_code}")
+            result['status'] = 'error'
+            result['error'] = f"Brave Search API failed: {test_response.status_code} - {test_response.text}"
+            result['error_details'] = get_error_details(test_response.text, test_response.status_code)
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Brave Search API network error: {str(e)}")
+        result['status'] = 'error'
+        result['error'] = f"Brave Search API network error: {str(e)}"
+        result['error_details'] = get_error_details(str(e), None)
+    
+    return result
+    """Fetch usage data from OpenAI's Usage API - focus only on usage monitoring"""
+    start_time = int(time.time()) - (days * 24 * 60 * 60)
+    
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    
+    result = {'status': 'unknown'}  # Initialize status
+    
+    # Debug: Print key info (masked for security)
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing key: {key_preview}")
+    print(f"Key length: {len(api_key)}")
+    print(f"Key starts with: {api_key[:10]}")
+    
+    has_usage = False
+    has_costs = False
+    
+    # Go straight to Usage API - this is what we care about
+    usage_params = {
+        'start_time': start_time,
+        'bucket_width': '1d',
+        'limit': days
+    }
+    
+    try:
+        print(f"Testing Usage API access...")
+        usage_response = requests.get(
+            'https://api.openai.com/v1/organization/usage/completions',
+            headers=headers,
+            params=usage_params,
+            timeout=10,  # Shorter timeout
+            verify=True
+        )
         
-        /* Account Management */
-        .account-section { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 30px; }
-        .account-section h3 { color: #1f2937; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
-        .account-list { display: grid; gap: 10px; margin-bottom: 20px; }
-        .account-item { display: flex; align-items: center; justify-content: space-between; background: white; padding: 15px; border-radius: 6px; border: 1px solid #e5e7eb; }
-        .account-info { flex: 1; }
-        .account-email { font-weight: 600; color: #1f2937; }
-        .account-details { font-size: 12px; color: #6b7280; margin-top: 4px; }
-        .account-actions { display: flex; gap: 8px; }
+        print(f"Usage API response: {usage_response.status_code}")
+        if usage_response.status_code == 200:
+            print(f"✓ Usage API access works!")
+            usage_json = usage_response.json()
+            print(f"Usage data: {len(usage_json.get('data', []))} buckets")
+            result['usage'] = usage_json
+            has_usage = True
+        else:
+            print(f"✗ Usage API failed: {usage_response.status_code}")
+            result['usage_error'] = {
+                'error': f"Usage API failed: {usage_response.status_code} - {usage_response.text}",
+                'error_details': get_error_details(usage_response.text, usage_response.status_code)
+            }
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Usage API network error: {str(e)}")
+        result['usage_error'] = {
+            'error': f"Usage API network error: {str(e)}",
+            'error_details': get_error_details(str(e), None)
+        }
+    
+    # Try Costs API
+    costs_params = {
+        'start_time': start_time,
+        'bucket_width': '1d',
+        'limit': days
+    }
+    
+    try:
+        print(f"Testing Costs API access...")
+        costs_response = requests.get(
+            'https://api.openai.com/v1/organization/costs',
+            headers=headers,
+            params=costs_params,
+            timeout=10,
+            verify=True
+        )
         
-        /* Key Management Enhanced */
-        .key-management { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 30px; }
-        .key-management h3 { color: #1f2937; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
-        .key-list { display: grid; gap: 10px; margin-bottom: 20px; }
-        .key-item { display: flex; align-items: center; justify-content: space-between; background: white; padding: 15px; border-radius: 6px; border: 1px solid #e5e7eb; }
-        .key-info { flex: 1; }
-        .key-name { font-weight: 600; color: #1f2937; }
-        .key-display { font-family: monospace; font-size: 12px; color: #6b7280; margin-top: 4px; }
-        .key-metadata { font-size: 11px; color: #9ca3af; margin-top: 2px; }
-        .key-actions { display: flex; gap: 8px; }
-        .key-type-badge { padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
-        .key-type-admin { background: #dcfce7; color: #166534; }
-        .key-type-project { background: #dbeafe; color: #1d4ed8; }
-        .provider-badge { padding: 2px 6px; border-radius: 10px; font-size: 9px; font-weight: 600; text-transform: uppercase; margin-left: 4px; }
-        .provider-openai { background: #dcfce7; color: #166534; }
-        .provider-anthropic { background: #fef3c7; color: #92400e; }
-        .provider-brave { background: #e0f2fe; color: #0277bd; }
+        print(f"Costs API response: {costs_response.status_code}")
+        if costs_response.status_code == 200:
+            print(f"✓ Costs API access works!")
+            costs_json = costs_response.json()
+            result['costs'] = costs_json
+            has_costs = True
+        else:
+            print(f"✗ Costs API failed: {costs_response.status_code}")
+            result['costs_error'] = {
+                'error': f"Costs API failed: {costs_response.status_code} - {costs_response.text}",
+                'error_details': get_error_details(costs_response.text, costs_response.status_code)
+            }
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Costs API network error: {str(e)}")
+        result['costs_error'] = {
+            'error': f"Costs API network error: {str(e)}",
+            'error_details': get_error_details(str(e), None)
+        }
+    
+    # Determine final status based on what we got
+    if has_usage and has_costs:
+        result['status'] = 'success'
+    elif has_usage or has_costs:
+        result['status'] = 'partial'
+    else:
+        result['status'] = 'no_usage_access'
+        result['message'] = "API key cannot access usage monitoring endpoints"
+    
+    return result#!/usr/bin/env python3
+"""
+OpenAI API Usage Dashboard Backend with SQLite Database
+Run this Python server to fetch real usage data from OpenAI's API
+"""
+
+from flask import Flask, jsonify, render_template_string, request
+from flask_cors import CORS
+import requests
+import time
+import json
+import sqlite3
+import os
+from datetime import datetime, timedelta
+from contextlib import contextmanager
+
+import re
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for browser requests
+
+# Database configuration
+DB_FILE = 'api_keys.db'
+
+def init_database():
+    """Initialize the SQLite database"""
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                name TEXT,
+                organization_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         
-        /* Controls */
-        .controls { display: flex; gap: 15px; margin-bottom: 30px; flex-wrap: wrap; align-items: end; }
-        .control-group { flex: 1; min-width: 200px; }
-        .control-group label { display: block; margin-bottom: 5px; font-weight: 600; color: #374151; }
-        .control-group input, .control-group select { width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; transition: border-color 0.3s ease; }
-        .control-group input:focus, .control-group select:focus { outline: none; border-color: #667eea; }
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                full_key TEXT NOT NULL,
+                masked_key TEXT NOT NULL,
+                key_type TEXT DEFAULT 'project',
+                provider TEXT DEFAULT 'openai',
+                account_id INTEGER,
+                admin_key_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts (id),
+                FOREIGN KEY (admin_key_id) REFERENCES api_keys (id)
+            )
+        ''')
         
-        /* Buttons */
-        .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: transform 0.2s ease; margin-right: 10px; }
-        .btn:hover { transform: translateY(-2px); }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-        .btn-secondary { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); }
-        .btn-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-        .btn-success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
-        .btn-small { padding: 8px 16px; font-size: 12px; }
+        # Create default account if none exists
+        cursor = conn.execute('''
+            INSERT OR IGNORE INTO accounts (email, name, organization_name) 
+            VALUES ('user@example.com', 'Default User', 'My Organization')
+        ''')
         
-        /* Modal Styles */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
-        .modal-overlay.active { opacity: 1; visibility: visible; }
-        .modal { background: white; border-radius: 12px; padding: 30px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; transform: translateY(-20px); transition: transform 0.3s ease; position: relative; }
-        .modal-overlay.active .modal { transform: translateY(0); }
-        .modal h3 { margin-bottom: 20px; color: #1f2937; }
-        .modal .form-group { margin-bottom: 20px; }
-        .modal .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #374151; }
-        .modal .form-group input, .modal .form-group textarea, .modal .form-group select { width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; transition: border-color 0.3s ease; }
-        .modal .form-group input:focus, .modal .form-group textarea:focus, .modal .form-group select:focus { outline: none; border-color: #667eea; }
-        .modal .form-group textarea { height: 80px; resize: vertical; font-family: monospace; }
-        .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 30px; }
-        .modal-close { position: absolute; top: 15px; right: 15px; background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280; }
-        .modal-close:hover { color: #374151; }
+        # Get the default account ID
+        cursor = conn.execute('SELECT id FROM accounts WHERE email = ?', ('user@example.com',))
+        default_account_id = cursor.fetchone()[0]
         
-        /* Form validation */
-        .form-group.error input, .form-group.error textarea, .form-group.error select { border-color: #ef4444; }
-        .form-error { color: #ef4444; font-size: 12px; margin-top: 4px; }
+        # Update any keys that don't have an account_id to use the default account
+        cursor = conn.execute('UPDATE api_keys SET account_id = ? WHERE account_id IS NULL', (default_account_id,))
+        updated_keys = cursor.rowcount
         
-        /* Test Result Styles */
-        .test-result { margin-top: 15px; padding: 12px; border-radius: 6px; font-size: 14px; }
-        .test-result.success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-        .test-result.error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        if updated_keys > 0:
+            print(f"✅ Migrated {updated_keys} existing keys to default account")
         
-        /* Usage Dashboard Styles */
-        .api-key-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px; position: relative; }
-        .api-key-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .api-key-name { font-weight: 600; color: #1f2937; font-size: 1.1rem; }
-        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
-        .status-active { background: #dcfce7; color: #166534; }
-        .status-error { background: #fee2e2; color: #991b1b; }
-        .status-partial { background: #fef3c7; color: #92400e; }
-        .status-basic { background: #e0f2fe; color: #0277bd; }
-        .status-info { background: #f3f4f6; color: #374151; }
-        .status-no-usage { background: #fef2f2; color: #b91c1c; }
-        .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }
-        .usage-card { background: white; padding: 15px; border-radius: 6px; border-left: 4px solid #667eea; }
-        .usage-card h4 { color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; }
-        .usage-card .value { font-size: 1.5rem; font-weight: 700; color: #1f2937; }
-        .usage-card .subtext { font-size: 12px; color: #9ca3af; margin-top: 5px; }
-        .error-details { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 15px; margin-top: 10px; }
-        .error-title { font-weight: 600; color: #991b1b; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-        .error-description { color: #7f1d1d; font-size: 13px; line-height: 1.4; margin-bottom: 10px; }
-        .error-solutions { background: #fff; border-radius: 4px; padding: 10px; margin-top: 8px; }
-        .error-solutions h5 { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; text-transform: uppercase; }
-        .error-solutions ul { margin-left: 16px; color: #6b7280; font-size: 12px; }
-        .error-solutions li { margin-bottom: 4px; }
-        .error-message { background: #fee2e2; color: #991b1b; padding: 15px; border-radius: 6px; margin-top: 10px; font-size: 14px; }
-        .loading { text-align: center; padding: 40px; color: #6b7280; }
-        .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #667eea; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .summary-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 12px; text-align: center; }
-        .summary-card h3 { font-size: 2rem; margin-bottom: 5px; }
-        .summary-card p { opacity: 0.9; font-size: 1.1rem; }
-        .key-masking { font-family: monospace; font-size: 14px; background: #f1f5f9; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0; }
-        .key-display-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-        .key-display-text { font-family: monospace; font-size: 12px; background: #f1f5f9; padding: 6px 8px; border-radius: 4px; border: 1px solid #e2e8f0; flex: 1; }
-        .key-toggle-btn { background: #6b7280; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; transition: background 0.2s; }
-        .key-toggle-btn:hover { background: #4b5563; }
-        .key-copy-btn { background: #10b981; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; transition: background 0.2s; }
-        .key-copy-btn:hover { background: #059669; }
-        .key-copy-btn:disabled { background: #9ca3af; cursor: not-allowed; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔧 OpenAI API Usage Dashboard</h1>
-            <p>Real-time monitoring of usage, costs, and limits across multiple API keys and accounts</p>
-        </div>
+        conn.commit()
         
-        <div class="dashboard">
-            <!-- Navigation Tabs -->
-            <div class="nav-tabs">
-                <button class="nav-tab active" onclick="switchTab('accounts')">👤 Accounts</button>
-                <button class="nav-tab" onclick="switchTab('keys')">🔑 API Keys</button>
-                <button class="nav-tab" onclick="switchTab('usage')">📊 Usage Dashboard</button>
-            </div>
-            
-            <!-- Account Management Tab -->
-            <div id="accounts-tab" class="tab-content active">
-                <div class="account-section">
-                    <h3>👤 Account Management</h3>
-                    <div id="accountList" class="account-list"></div>
-                    <button class="btn btn-success" onclick="showAddAccountModal()">
-                        + Add New Account
-                    </button>
-                </div>
-            </div>
-            
-            <!-- API Key Management Tab -->
-            <div id="keys-tab" class="tab-content">
-                <div class="key-management">
-                    <h3>🔑 API Key Management</h3>
-                    <div id="keyList" class="key-list"></div>
-                    <button class="btn btn-success" onclick="showAddKeyModal()">
-                        + Add New API Key
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Usage Dashboard Tab -->
-            <div id="usage-tab" class="tab-content">
-                <div class="controls">
-                    <div class="control-group">
-                        <label for="timeRange">Time Range</label>
-                        <select id="timeRange">
-                            <option value="7">Last 7 days</option>
-                            <option value="30" selected>Last 30 days</option>
-                            <option value="90">Last 90 days</option>
-                        </select>
-                    </div>
-                    <div class="control-group">
-                        <label>&nbsp;</label>
-                        <button class="btn" onclick="refreshData()" id="refreshBtn">
-                            🔄 Refresh Data
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="summarySection"></div>
-                <div id="apiKeysSection"></div>
-            </div>
-        </div>
-    </div>
+        # Add provider column if it doesn't exist (migration)
+        try:
+            conn.execute('ALTER TABLE api_keys ADD COLUMN provider TEXT DEFAULT "openai"')
+            conn.commit()
+            print("✅ Added provider column to existing database")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        
+        # Print current state for debugging
+        cursor = conn.execute('SELECT COUNT(*) FROM accounts')
+        account_count = cursor.fetchone()[0]
+        
+        cursor = conn.execute('SELECT COUNT(*) FROM api_keys')
+        key_count = cursor.fetchone()[0]
+        
+        print(f"📊 Database state: {account_count} accounts, {key_count} keys")
 
-    <!-- Account Modal -->
-    <div id="accountModal" class="modal-overlay">
-        <div class="modal">
-            <button class="modal-close" onclick="closeAccountModal()">&times;</button>
-            <h3 id="accountModalTitle">Add New Account</h3>
-            <form id="accountForm">
-                <div class="form-group">
-                    <label for="accountEmail">Email Address *</label>
-                    <input type="email" id="accountEmail" placeholder="e.g., user@company.com" required>
-                    <div class="form-error" id="accountEmailError"></div>
-                </div>
-                <div class="form-group">
-                    <label for="accountName">Name</label>
-                    <input type="text" id="accountName" placeholder="e.g., John Smith">
-                    <div class="form-error" id="accountNameError"></div>
-                </div>
-                <div class="form-group">
-                    <label for="organizationName">Organization</label>
-                    <input type="text" id="organizationName" placeholder="e.g., My Company">
-                    <div class="form-error" id="organizationError"></div>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeAccountModal()">
-                        Cancel
-                    </button>
-                    <button type="submit" class="btn btn-success">
-                        Save Account
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
+@contextmanager
+def get_db():
+    """Context manager for database connections"""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row  # Enable dict-like access to rows
+    try:
+        yield conn
+    finally:
+        conn.close()
 
-    <!-- API Key Modal -->
-    <div id="keyModal" class="modal-overlay">
-        <div class="modal">
-            <button class="modal-close" onclick="closeKeyModal()">&times;</button>
-            <h3 id="keyModalTitle">Add New API Key</h3>
-            <form id="keyForm">
-                <div class="form-group">
-                    <label for="keyAccount">Account *</label>
-                    <select id="keyAccount" required>
-                        <option value="">Select an account</option>
-                    </select>
-                    <div class="form-error" id="keyAccountError"></div>
-                </div>
-                <div class="form-group">
-                    <label for="keyName">Key Name *</label>
-                    <input type="text" id="keyName" placeholder="e.g., Production Key, Development Key" required>
-                    <div class="form-error" id="keyNameError"></div>
-                </div>
-                <div class="form-group">
-                    <label for="keyValue">API Key *</label>
-                    <textarea id="keyValue" placeholder="sk-proj-... (OpenAI)&#10;sk-ant-... (Anthropic)&#10;BSA... (Brave Search)" required></textarea>
-                    <div class="form-error" id="keyValueError"></div>
-                    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
-                        Supported: OpenAI (sk-*), Anthropic (sk-ant-*), Brave Search (BSA*)
-                    </div>
-                </div>
-                <div class="form-group" id="adminKeyGroup" style="display: none;">
-                    <label for="adminKey">Associated Admin Key</label>
-                    <select id="adminKey">
-                        <option value="">No admin key association</option>
-                    </select>
-                    <div class="form-error" id="adminKeyError"></div>
-                </div>
-                <div id="testResult" class="test-result" style="display: none;"></div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="testApiKey()">
-                        Test Key
-                    </button>
-                    <button type="button" class="btn btn-secondary" onclick="closeKeyModal()">
-                        Cancel
-                    </button>
-                    <button type="submit" class="btn btn-success">
-                        Save Key
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
+def mask_api_key(full_key):
+    """Create a masked version of the API key for display"""
+    if len(full_key) > 20:
+        prefix = full_key[:12]
+        suffix = full_key[-6:]
+        return f"{prefix}...{suffix}"
+    return full_key[:8] + "..."
 
-    <script>
-        let usageData = {};
-        let apiKeys = [];
-        let accounts = [];
-        let editingKeyId = null;
-        let editingAccountId = null;
+# Account Management Functions
+def get_all_accounts():
+    """Get all accounts from database"""
+    with get_db() as conn:
+        cursor = conn.execute('SELECT * FROM accounts ORDER BY email')
+        return [dict(row) for row in cursor.fetchall()]
 
-        // Tab Management
-        function switchTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // Show selected tab
-            document.getElementById(`${tabName}-tab`).classList.add('active');
-            event.target.classList.add('active');
-            
-            // Load data if needed
-            if (tabName === 'accounts') {
-                loadAccounts();
-            } else if (tabName === 'keys') {
-                loadApiKeys();
-            } else if (tabName === 'usage') {
-                if (apiKeys.length > 0) {
-                    refreshData();
-                }
-            }
+def add_account(email, name, organization_name):
+    """Add a new account to database"""
+    with get_db() as conn:
+        cursor = conn.execute(
+            'INSERT INTO accounts (email, name, organization_name) VALUES (?, ?, ?)',
+            (email, name, organization_name)
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+def get_account_by_id(account_id):
+    """Get a single account by ID"""
+    with get_db() as conn:
+        cursor = conn.execute('SELECT * FROM accounts WHERE id = ?', (account_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def update_account(account_id, email, name, organization_name):
+    """Update an existing account"""
+    with get_db() as conn:
+        conn.execute(
+            'UPDATE accounts SET email = ?, name = ?, organization_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (email, name, organization_name, account_id)
+        )
+        conn.commit()
+
+def delete_account(account_id):
+    """Delete an account and all associated keys"""
+    with get_db() as conn:
+        # Delete associated keys first
+        conn.execute('DELETE FROM api_keys WHERE account_id = ?', (account_id,))
+        # Delete account
+        conn.execute('DELETE FROM accounts WHERE id = ?', (account_id,))
+        conn.commit()
+
+def get_admin_keys_for_account(account_id):
+    """Get all admin keys for a specific account"""
+    with get_db() as conn:
+        cursor = conn.execute('''
+            SELECT id, name, masked_key 
+            FROM api_keys 
+            WHERE account_id = ? AND key_type = 'admin' 
+            ORDER BY name
+        ''', (account_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+# API Key Management Functions
+def get_all_keys():
+    """Get all API keys from database with admin associations and account info"""
+    with get_db() as conn:
+        cursor = conn.execute('''
+            SELECT k.id, k.name, k.full_key, k.masked_key, k.key_type, k.account_id, k.admin_key_id,
+                   admin.name as admin_name, admin.full_key as admin_full_key,
+                   a.email as account_email, a.name as account_name, a.organization_name
+            FROM api_keys k
+            LEFT JOIN api_keys admin ON k.admin_key_id = admin.id
+            LEFT JOIN accounts a ON k.account_id = a.id
+            ORDER BY a.email, k.name
+        ''')
+        
+        keys = [dict(row) for row in cursor.fetchall()]
+        print(f"get_all_keys: Found {len(keys)} keys in database")
+        
+        for key in keys:
+            print(f"  Key: {key['name']} (ID: {key['id']}) - Account: {key['account_email']} - Type: {key['key_type']}")
+        
+        return keys
+
+def get_key_by_id(key_id):
+    """Get a single API key by ID with admin association and account info"""
+    with get_db() as conn:
+        cursor = conn.execute('''
+            SELECT k.id, k.name, k.full_key, k.masked_key, k.key_type, k.account_id, k.admin_key_id,
+                   admin.name as admin_name, admin.full_key as admin_full_key,
+                   a.email as account_email, a.name as account_name, a.organization_name
+            FROM api_keys k
+            LEFT JOIN api_keys admin ON k.admin_key_id = admin.id
+            LEFT JOIN accounts a ON k.account_id = a.id
+            WHERE k.id = ?
+        ''', (key_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def add_key(name, full_key, key_type='project', account_id=None, admin_key_id=None, provider='openai'):
+    """Add a new API key to database"""
+    masked_key = mask_api_key(full_key)
+    with get_db() as conn:
+        cursor = conn.execute(
+            'INSERT INTO api_keys (name, full_key, masked_key, key_type, provider, account_id, admin_key_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (name, full_key, masked_key, key_type, provider, account_id, admin_key_id)
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+def update_key(key_id, name, full_key=None, account_id=None, admin_key_id=None):
+    """Update an existing API key"""
+    with get_db() as conn:
+        if full_key:
+            masked_key = mask_api_key(full_key)
+            conn.execute(
+                'UPDATE api_keys SET name = ?, full_key = ?, masked_key = ?, account_id = ?, admin_key_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                (name, full_key, masked_key, account_id, admin_key_id, key_id)
+            )
+        else:
+            conn.execute(
+                'UPDATE api_keys SET name = ?, account_id = ?, admin_key_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                (name, account_id, admin_key_id, key_id)
+            )
+        conn.commit()
+
+def delete_key(key_id):
+    """Delete an API key from database"""
+    with get_db() as conn:
+        conn.execute('DELETE FROM api_keys WHERE id = ?', (key_id,))
+        conn.commit()
+
+def check_name_exists(name, account_id, exclude_id=None):
+    """Check if a key name already exists for this account"""
+    with get_db() as conn:
+        if exclude_id:
+            cursor = conn.execute('SELECT COUNT(*) FROM api_keys WHERE name = ? AND account_id = ? AND id != ?', (name, account_id, exclude_id))
+        else:
+            cursor = conn.execute('SELECT COUNT(*) FROM api_keys WHERE name = ? AND account_id = ?', (name, account_id))
+        return cursor.fetchone()[0] > 0
+
+def detect_key_type(api_key):
+    """Detect API provider and key type based on format"""
+    if api_key.startswith('sk-admin-'):
+        return {'provider': 'openai', 'type': 'admin'}
+    elif api_key.startswith('sk-proj-'):
+        return {'provider': 'openai', 'type': 'project'}
+    elif api_key.startswith('sk-'):
+        return {'provider': 'openai', 'type': 'project'}  # Default for older OpenAI formats
+    elif api_key.startswith('sk-ant-'):
+        return {'provider': 'anthropic', 'type': 'project'}
+    elif api_key.startswith('BSA'):
+        return {'provider': 'brave', 'type': 'search'}
+    else:
+        return {'provider': 'unknown', 'type': 'unknown'}
+
+def get_error_details(error_message, status_code):
+    """Map HTTP status codes to user-friendly error messages"""
+    
+    # Check for specific OpenAI permission errors
+    if "Missing scopes" in error_message or "api.model.read" in error_message:
+        return {
+            "icon": "🔐",
+            "title": "Insufficient API Key Scopes",
+            "description": "Your API key doesn't have the required permissions (scopes) for this operation.",
+            "solutions": [
+                "Create a new API key with 'All' permissions in OpenAI dashboard",
+                "Ensure your role is 'Owner' or 'Admin' in the organization",
+                "Check that the key isn't restricted to specific models/endpoints",
+                "For Usage API: Contact OpenAI support to enable usage monitoring permissions"
+            ]
         }
-
-        // Account Management Functions
-        async function loadAccounts() {
-            try {
-                const response = await fetch('/api/accounts');
-                accounts = await response.json();
-                renderAccountList();
-            } catch (error) {
-                console.error('Failed to load accounts:', error);
-            }
+    
+    error_mappings = {
+        401: {
+            "icon": "🔑",
+            "title": "Authentication Failed",
+            "description": "Your API key is invalid, expired, or doesn't have proper permissions.",
+            "solutions": [
+                "Check if the API key is correctly copied (no extra spaces)",
+                "Verify the key hasn't been revoked in OpenAI dashboard", 
+                "Ensure the key has billing enabled on your OpenAI account",
+                "Check if the key belongs to the correct organization",
+                "Try creating a new API key with 'All' permissions"
+            ]
+        },
+        403: {
+            "icon": "🚫", 
+            "title": "Permission Denied",
+            "description": "Your API key doesn't have access to the Usage API. This is common - most OpenAI keys can't access usage data.",
+            "solutions": [
+                "Usage API access is restricted - most API keys cannot access it",
+                "Contact OpenAI support specifically requesting Usage API access",
+                "Consider using OpenAI's web dashboard for usage monitoring instead",
+                "For now, use this dashboard to test key validity and organize your keys",
+                "Note: Even 'admin' keys often don't have Usage API access"
+            ]
+        },
+        429: {
+            "icon": "⏱️",
+            "title": "Rate Limited", 
+            "description": "You're making too many requests. OpenAI has temporarily blocked further calls.",
+            "solutions": [
+                "Wait a few minutes before trying again",
+                "Reduce the frequency of dashboard refreshes",
+                "Consider upgrading your OpenAI plan for higher limits",
+                "Implement exponential backoff in your requests"
+            ]
+        },
+        500: {
+            "icon": "🔧",
+            "title": "OpenAI Server Error",
+            "description": "OpenAI's servers are experiencing issues. This is not your fault.",
+            "solutions": [
+                "Wait a few minutes and try again",
+                "Check OpenAI's status page (status.openai.com)",
+                "Try again during off-peak hours", 
+                "Contact OpenAI support if the issue persists"
+            ]
+        },
+        404: {
+            "icon": "❓",
+            "title": "Endpoint Not Found",
+            "description": "The Usage API endpoint doesn't exist or has changed.",
+            "solutions": [
+                "Usage API access is highly restricted by OpenAI",
+                "Most API keys cannot access usage endpoints",
+                "Use OpenAI's web dashboard for usage monitoring",
+                "This dashboard can still help organize and test your keys"
+            ]
         }
+    }
+    
+    return error_mappings.get(status_code, {
+        "icon": "⚠️",
+        "title": "Unknown Error",
+        "description": error_message,
+        "solutions": [
+            "Check your internet connection",
+            "Verify the API key is correct", 
+            "Try refreshing the page",
+            "Contact support if the issue persists"
+        ]
+    })
 
-        function renderAccountList() {
-            const accountList = document.getElementById('accountList');
-            
-            if (accounts.length === 0) {
-                accountList.innerHTML = `
-                    <div style="text-align: center; color: #6b7280; padding: 20px;">
-                        No accounts configured. Add your first account to get started!
-                    </div>
-                `;
-                return;
+def fetch_openai_usage(api_key, days=30):
+    """Fetch usage data from OpenAI's Usage API - focus only on usage monitoring"""
+    start_time = int(time.time()) - (days * 24 * 60 * 60)
+    
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    
+    result = {}
+    
+    # Debug: Print key info (masked for security)
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing key: {key_preview}")
+    print(f"Key length: {len(api_key)}")
+    print(f"Key starts with: {api_key[:10]}")
+    
+    # Go straight to Usage API - this is what we care about
+    usage_params = {
+        'start_time': start_time,
+        'bucket_width': '1d',
+        'limit': days
+    }
+    
+    try:
+        print(f"Testing Usage API access...")
+        usage_response = requests.get(
+            'https://api.openai.com/v1/organization/usage/completions',
+            headers=headers,
+            params=usage_params,
+            timeout=30,
+            verify=True
+        )
+        
+        print(f"Usage API response: {usage_response.status_code}")
+        if usage_response.status_code == 200:
+            print(f"✓ Usage API access works!")
+            usage_json = usage_response.json()
+            print(f"Usage data: {len(usage_json.get('data', []))} buckets")
+            result['usage'] = usage_json
+            result['status'] = 'success'
+        else:
+            print(f"✗ Usage API failed: {usage_response.status_code}")
+            print(f"Usage API error response: {usage_response.text}")
+            result['usage_error'] = {
+                'error': f"Usage API failed: {usage_response.status_code} - {usage_response.text}",
+                'error_details': get_error_details(usage_response.text, usage_response.status_code)
             }
+            result['status'] = 'error'
             
-            accountList.innerHTML = accounts.map(account => `
-                <div class="account-item">
-                    <div class="account-info">
-                        <div class="account-email">${account.email}</div>
-                        <div class="account-details">
-                            ${account.name ? account.name : 'No name'} • 
-                            ${account.organization_name ? account.organization_name : 'No organization'}
-                        </div>
-                    </div>
-                    <div class="account-actions">
-                        <button class="btn btn-secondary btn-small" onclick="editAccount('${account.id}')">
-                            Edit
-                        </button>
-                        <button class="btn btn-danger btn-small" onclick="deleteAccount('${account.id}', '${account.email}')">
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            `).join('');
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Usage API network error: {str(e)}")
+        result['usage_error'] = {
+            'error': f"Usage API network error: {str(e)}",
+            'error_details': get_error_details(str(e), None)
         }
-
-        function showAddAccountModal() {
-            editingAccountId = null;
-            document.getElementById('accountModalTitle').textContent = 'Add New Account';
-            document.getElementById('accountEmail').value = '';
-            document.getElementById('accountName').value = '';
-            document.getElementById('organizationName').value = '';
-            clearAccountErrors();
-            document.getElementById('accountModal').classList.add('active');
+        result['status'] = 'error'
+    
+    # Try Costs API
+    costs_params = {
+        'start_time': start_time,
+        'bucket_width': '1d',
+        'limit': days
+    }
+    
+    try:
+        print(f"Testing Costs API access...")
+        costs_response = requests.get(
+            'https://api.openai.com/v1/organization/costs',
+            headers=headers,
+            params=costs_params,
+            timeout=30,
+            verify=True
+        )
+        
+        print(f"Costs API response: {costs_response.status_code}")
+        if costs_response.status_code == 200:
+            print(f"✓ Costs API access works!")
+            costs_json = costs_response.json()
+            result['costs'] = costs_json
+            # If we didn't get usage but got costs, that's still partial success
+            if result.get('status') != 'success':
+                result['status'] = 'partial'
+        else:
+            print(f"✗ Costs API failed: {costs_response.status_code}")
+            print(f"Costs API error response: {costs_response.text}")
+            result['costs_error'] = {
+                'error': f"Costs API failed: {costs_response.status_code} - {costs_response.text}",
+                'error_details': get_error_details(costs_response.text, costs_response.status_code)
+            }
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Costs API network error: {str(e)}")
+        result['costs_error'] = {
+            'error': f"Costs API network error: {str(e)}",
+            'error_details': get_error_details(str(e), None)
         }
+    
+    # If we have usage or costs data, consider it success/partial
+    if result.get('usage') or result.get('costs'):
+        if result.get('usage') and result.get('costs'):
+            result['status'] = 'success'
+        else:
+            result['status'] = 'partial'
+    elif result.get('status') != 'error':
+        result['status'] = 'no_usage_access'
+        result['message'] = "API key cannot access usage monitoring endpoints"
+    
+    return result
 
-        function editAccount(accountId) {
-            const account = accounts.find(a => a.id == accountId);
-            if (!account) return;
-            
-            editingAccountId = accountId;
-            document.getElementById('accountModalTitle').textContent = 'Edit Account';
-            document.getElementById('accountEmail').value = account.email;
-            document.getElementById('accountName').value = account.name || '';
-            document.getElementById('organizationName').value = account.organization_name || '';
-            clearAccountErrors();
-            document.getElementById('accountModal').classList.add('active');
+# Flask Routes
+
+@app.route('/')
+def dashboard():
+    """Serve the HTML dashboard"""
+    # Read the HTML template file
+    try:
+        with open('enhanced_template.html', 'r') as f:
+            html_content = f.read()
+        return html_content
+    except FileNotFoundError:
+        return """
+        <h1>Template file not found</h1>
+        <p>Please make sure 'enhanced_template.html' exists in the same directory as dashboard.py</p>
+        """, 404
+
+# Account Management Routes
+@app.route('/api/accounts', methods=['GET'])
+def get_accounts():
+    """Get all accounts"""
+    accounts = get_all_accounts()
+    return jsonify(accounts)
+
+@app.route('/api/accounts', methods=['POST'])
+def add_account_endpoint():
+    """Add a new account"""
+    data = request.get_json()
+    
+    if not data or 'email' not in data:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    email = data['email'].strip()
+    name = data.get('name', '').strip()
+    organization_name = data.get('organization_name', '').strip()
+    
+    try:
+        account_id = add_account(email, name, organization_name)
+        return jsonify({
+            'id': account_id,
+            'email': email,
+            'name': name,
+            'organization_name': organization_name
+        }), 201
+    except Exception as e:
+        if 'UNIQUE constraint failed' in str(e):
+            return jsonify({'error': 'Account with this email already exists'}), 400
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/accounts/<account_id>', methods=['PUT'])
+def update_account_endpoint(account_id):
+    """Update an existing account"""
+    data = request.get_json()
+    
+    if not data or 'email' not in data:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    account = get_account_by_id(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    email = data['email'].strip()
+    name = data.get('name', '').strip()
+    organization_name = data.get('organization_name', '').strip()
+    
+    try:
+        update_account(account_id, email, name, organization_name)
+        return jsonify({
+            'id': int(account_id),
+            'email': email,
+            'name': name,
+            'organization_name': organization_name
+        })
+    except Exception as e:
+        if 'UNIQUE constraint failed' in str(e):
+            return jsonify({'error': 'Account with this email already exists'}), 400
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/accounts/<account_id>', methods=['DELETE'])
+def delete_account_endpoint(account_id):
+    """Delete an account and all associated keys"""
+    account = get_account_by_id(account_id)
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    try:
+        delete_account(account_id)
+        return jsonify({'message': 'Account and associated keys deleted successfully'})
+    except Exception as e:
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/accounts/<account_id>/admin-keys', methods=['GET'])
+def get_account_admin_keys(account_id):
+    """Get all admin keys for a specific account"""
+    admin_keys = get_admin_keys_for_account(account_id)
+    return jsonify(admin_keys)
+
+# API Key Management Routes
+@app.route('/api/keys', methods=['GET'])
+def get_keys():
+    """Get all API keys (masked) with admin associations and account info"""
+    try:
+        keys = get_all_keys()
+        result = []
+        
+        for key in keys:
+            result.append({
+                'id': str(key['id']),
+                'name': key['name'],
+                'key': key['masked_key'],
+                'key_type': key['key_type'],
+                'account_id': key['account_id'],
+                'admin_key_id': key['admin_key_id'],
+                'admin_name': key['admin_name'],
+                'account_email': key['account_email'],
+                'account_name': key['account_name'],
+                'organization_name': key['organization_name']
+            })
+        
+        print(f"Returning {len(result)} keys from database")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error in get_keys: {str(e)}")
+        return jsonify({'error': f'Failed to load keys: {str(e)}'}), 500
+
+@app.route('/api/keys', methods=['POST'])
+def add_key_endpoint():
+    """Add a new API key"""
+    data = request.get_json()
+    
+    if not data or 'name' not in data or 'full_key' not in data:
+        return jsonify({'error': 'Name and API key are required'}), 400
+    
+    name = data['name'].strip()
+    full_key = data['full_key'].strip()
+    account_id = data.get('account_id')
+    admin_key_id = data.get('admin_key_id')
+    
+    if not re.match(r'^(sk-|BSA)', full_key):
+        return jsonify({'error': 'Invalid API key format - must start with sk- (OpenAI/Anthropic) or BSA (Brave)'}), 400
+    
+    if not account_id:
+        return jsonify({'error': 'Account ID is required'}), 400
+    
+    # Auto-detect key provider and type
+    key_info = detect_key_type(full_key)
+    provider = key_info['provider']
+    key_type = key_info['type']
+    
+    # Check for duplicate names in this account
+    if check_name_exists(name, account_id):
+        return jsonify({'error': 'API key name already exists for this account'}), 400
+    
+    try:
+        key_id = add_key(name, full_key, key_type, account_id, admin_key_id, provider)
+        return jsonify({
+            'id': str(key_id),
+            'name': name,
+            'key': mask_api_key(full_key),
+            'key_type': key_type,
+            'provider': provider
+        }), 201
+    except Exception as e:
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/keys/<key_id>', methods=['PUT'])
+def update_key_endpoint(key_id):
+    """Update an existing API key"""
+    data = request.get_json()
+    
+    if not data or 'name' not in data:
+        return jsonify({'error': 'Name is required'}), 400
+    
+    key = get_key_by_id(key_id)
+    if not key:
+        return jsonify({'error': 'API key not found'}), 404
+    
+    name = data['name'].strip()
+    account_id = data.get('account_id', key['account_id'])
+    admin_key_id = data.get('admin_key_id')
+    
+    # Check for duplicate names (excluding current key)
+    if check_name_exists(name, account_id, exclude_id=key_id):
+        return jsonify({'error': 'API key name already exists for this account'}), 400
+    
+    # Handle API key update
+    full_key = None
+    if 'full_key' in data and data['full_key'].strip():
+        full_key = data['full_key'].strip()
+        if not re.match(r'^(sk-|BSA)', full_key):
+            return jsonify({'error': 'Invalid API key format - must start with sk- (OpenAI/Anthropic) or BSA (Brave)'}), 400
+    
+    try:
+        update_key(key_id, name, full_key, account_id, admin_key_id)
+        updated_key = get_key_by_id(key_id)
+        return jsonify({
+            'id': str(updated_key['id']),
+            'name': updated_key['name'],
+            'key': updated_key['masked_key'],
+            'key_type': updated_key['key_type'],
+            'account_id': updated_key['account_id'],
+            'admin_key_id': updated_key['admin_key_id']
+        })
+    except Exception as e:
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/keys/<key_id>', methods=['DELETE'])
+def delete_key_endpoint(key_id):
+    """Delete an API key"""
+    key = get_key_by_id(key_id)
+    if not key:
+        return jsonify({'error': 'API key not found'}), 404
+    
+    try:
+        delete_key(key_id)
+        return jsonify({'message': 'API key deleted successfully'})
+    except Exception as e:
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/keys/<key_id>/full', methods=['GET'])
+def get_full_key(key_id):
+    """Get the full API key (for copying) - security sensitive endpoint"""
+    key = get_key_by_id(key_id)
+    if not key:
+        return jsonify({'error': 'API key not found'}), 404
+    
+    # Return only the full key for copying purposes
+    return jsonify({
+        'full_key': key['full_key']
+    })
+
+@app.route('/api/keys/<key_id>/test', methods=['POST'])
+def test_key_endpoint(key_id):
+    """Test an API key by making a simple request"""
+    key = get_key_by_id(key_id)
+    if not key:
+        return jsonify({'error': 'API key not found'}), 404
+    
+    try:
+        # Make a simple request to test the key
+        headers = {
+            'Authorization': f'Bearer {key["full_key"]}',
+            'Content-Type': 'application/json'
         }
+        
+        # Try to get models list (simpler than usage API)
+        response = requests.get(
+            'https://api.openai.com/v1/models',
+            headers=headers,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return jsonify({
+                'status': 'success',
+                'message': 'API key is valid and working'
+            })
+        else:
+            error_details = get_error_details(response.text, response.status_code)
+            return jsonify({
+                'status': 'error',
+                'message': f'API key test failed: {response.status_code}',
+                'error_details': error_details
+            }), 400
+            
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Network error: {str(e)}'
+        }), 500
 
-        function closeAccountModal() {
-            document.getElementById('accountModal').classList.remove('active');
-            editingAccountId = null;
-            clearAccountErrors();
+@app.route('/api/usage')
+def get_usage():
+    """API endpoint to fetch usage data only for admin keys, with associated project keys shown as inventory"""
+    days = request.args.get('days', 30, type=int)
+    
+    results = {}
+    all_keys = get_all_keys()
+    
+    # Group keys by account and separate admin from project keys
+    admin_keys = [key for key in all_keys if key['key_type'] == 'admin']
+    project_keys = [key for key in all_keys if key['key_type'] == 'project']
+    
+    print(f"Found {len(admin_keys)} admin keys and {len(project_keys)} project keys")
+    print("Admin keys:", [key['name'] for key in admin_keys])
+    print("Project keys:", [key['name'] for key in project_keys])
+    
+    # Process ONLY admin keys - fetch actual usage data
+    for admin_key in admin_keys:
+        print(f"Fetching usage for admin key: {admin_key['name']} - Account: {admin_key['account_email']}")
+        
+        # Fetch usage data for admin key
+        usage_data = fetch_api_usage(admin_key['full_key'], days)
+        
+        # Find associated project keys for this admin key
+        associated_projects = [
+            {
+                'id': str(proj['id']),
+                'name': proj['name'],
+                'key': proj['masked_key']
+            }
+            for proj in project_keys 
+            if proj['admin_key_id'] == admin_key['id']
+        ]
+        
+        # Add metadata
+        usage_data['usage_key_source'] = 'admin key direct access'
+        usage_data['associated_project_keys'] = associated_projects
+        usage_data['project_key_count'] = len(associated_projects)
+        
+        # Combine admin key info with usage data - use unique key for results
+        unique_key_name = f"{admin_key['name']} - {admin_key['account_email']}"
+        results[unique_key_name] = {
+            'id': str(admin_key['id']),
+            'name': admin_key['name'],
+            'key': admin_key['masked_key'],
+            'key_type': admin_key['key_type'],
+            'account_email': admin_key['account_email'],
+            'account_name': admin_key['account_name'],
+            'organization_name': admin_key['organization_name'],
+            'admin_name': None,  # This IS the admin key
+            **usage_data
         }
-
-        async function deleteAccount(accountId, email) {
-            if (!confirm(`Are you sure you want to delete account "${email}" and all associated API keys? This action cannot be undone.`)) {
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/api/accounts/${accountId}`, {
-                    method: 'DELETE'
-                });
-                
-                if (response.ok) {
-                    await loadAccounts();
-                    await loadApiKeys(); // Refresh keys since they might be deleted
-                } else {
-                    const error = await response.json();
-                    alert(`Failed to delete account: ${error.error}`);
-                }
-            } catch (error) {
-                alert(`Network error: ${error.message}`);
-            }
+        
+        # Add small delay to avoid rate limiting
+        time.sleep(0.5)
+    
+    # ONLY include orphaned project keys (no admin key association) as info items
+    orphaned_projects = [key for key in project_keys if not key['admin_key_id']]
+    
+    for orphaned_key in orphaned_projects:
+        print(f"Adding orphaned project key as info: {orphaned_key['name']} - Account: {orphaned_key['account_email']}")
+        
+        # Don't test orphaned keys - just show them as informational
+        unique_orphan_name = f"{orphaned_key['name']} - {orphaned_key['account_email']}"
+        results[unique_orphan_name] = {
+            'id': str(orphaned_key['id']),
+            'name': orphaned_key['name'],
+            'key': orphaned_key['masked_key'],
+            'key_type': orphaned_key['key_type'],
+            'account_email': orphaned_key['account_email'],
+            'account_name': orphaned_key['account_name'],
+            'organization_name': orphaned_key['organization_name'],
+            'admin_name': None,
+            'status': 'info_only',
+            'message': 'Project key without admin association - not tested for usage data',
+            'usage_key_source': 'orphaned project key (info only)',
+            'associated_project_keys': [],
+            'project_key_count': 0,
+            'note': 'This project key is not being tested. Link it to an admin key to include its usage data under that admin key.'
         }
+    
+    print(f"Processed {len(admin_keys)} admin keys and {len(orphaned_projects)} orphaned project keys (info only)")
+    return jsonify(results)
 
-        function clearAccountErrors() {
-            document.querySelectorAll('#accountModal .form-group').forEach(group => {
-                group.classList.remove('error');
-            });
-            document.querySelectorAll('#accountModal .form-error').forEach(error => {
-                error.textContent = '';
-            });
-        }
-
-        function showAccountError(elementId, message) {
-            const errorElement = document.getElementById(elementId);
-            errorElement.textContent = message;
-            errorElement.closest('.form-group').classList.add('error');
-        }
-
-        // Account form submission
-        document.getElementById('accountForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
+@app.route('/api/debug')
+def debug_database():
+    """Debug endpoint to see database contents"""
+    try:
+        with get_db() as conn:
+            # Get accounts
+            cursor = conn.execute('SELECT * FROM accounts')
+            accounts = [dict(row) for row in cursor.fetchall()]
             
-            const email = document.getElementById('accountEmail').value.trim();
-            const name = document.getElementById('accountName').value.trim();
-            const organizationName = document.getElementById('organizationName').value.trim();
+            # Get keys
+            cursor = conn.execute('SELECT * FROM api_keys')
+            keys = [dict(row) for row in cursor.fetchall()]
             
-            clearAccountErrors();
-            
-            if (!email) {
-                showAccountError('accountEmailError', 'Email is required');
-                return;
-            }
-            
-            try {
-                const payload = { email, name, organization_name: organizationName };
-                const url = editingAccountId ? `/api/accounts/${editingAccountId}` : '/api/accounts';
-                const method = editingAccountId ? 'PUT' : 'POST';
-                
-                const response = await fetch(url, {
-                    method: method,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                if (response.ok) {
-                    closeAccountModal();
-                    await loadAccounts();
-                    await loadApiKeys(); // Refresh keys in case account was updated
-                } else {
-                    const error = await response.json();
-                    if (error.error.includes('email already exists')) {
-                        showAccountError('accountEmailError', error.error);
-                    } else {
-                        alert(`Error: ${error.error}`);
-                    }
-                }
-            } catch (error) {
-                alert(`Network error: ${error.message}`);
-            }
-        });
+            return jsonify({
+                'accounts': accounts,
+                'keys': keys,
+                'total_accounts': len(accounts),
+                'total_keys': len(keys)
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-        // API Key Management Functions
-        async function loadApiKeys() {
-            try {
-                const response = await fetch('/api/keys');
-                const keys = await response.json();
-                
-                // Enrich keys with account data
-                apiKeys = keys.map(key => {
-                    const account = accounts.find(a => a.id == key.account_id);
-                    return {
-                        ...key,
-                        account_email: account ? account.email : 'Unknown Account',
-                        account_name: account ? account.name : '',
-                        organization_name: account ? account.organization_name : ''
-                    };
-                });
-                
-                renderKeyList();
-            } catch (error) {
-                console.error('Failed to load API keys:', error);
-            }
-        }
-
-        function renderKeyList() {
-            const keyList = document.getElementById('keyList');
-            
-            if (apiKeys.length === 0) {
-                keyList.innerHTML = `
-                    <div style="text-align: center; color: #6b7280; padding: 20px;">
-                        No API keys configured. Add your first key to get started!
-                    </div>
-                `;
-                return;
-            }
-            
-            // Group keys by account
-            const keysByAccount = {};
-            apiKeys.forEach(key => {
-                const accountKey = key.account_email || 'No Account';
-                if (!keysByAccount[accountKey]) {
-                    keysByAccount[accountKey] = [];
-                }
-                keysByAccount[accountKey].push(key);
-            });
-            
-            let html = '';
-            Object.entries(keysByAccount).forEach(([accountEmail, keys]) => {
-                html += `
-                    <div style="margin-bottom: 20px;">
-                        <h4 style="color: #4b5563; margin-bottom: 10px; font-size: 14px; font-weight: 600;">
-                            📧 ${accountEmail}
-                        </h4>
-                        <div style="margin-left: 10px; border-left: 2px solid #e5e7eb; padding-left: 15px;">
-                `;
-                
-                keys.forEach(key => {
-                    html += `
-                        <div class="key-item" style="margin-bottom: 10px;">
-                            <div class="key-info">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                                    <span class="key-name">${key.name}</span>
-                                    <span class="key-type-badge ${key.key_type === 'admin' ? 'key-type-admin' : 'key-type-project'}">
-                                        ${key.key_type}
-                                    </span>
-                                    <span class="provider-badge provider-${key.provider || 'openai'}">
-                                        ${(key.provider || 'openai').toUpperCase()}
-                                    </span>
-                                </div>
-                                <div class="key-display-container">
-                                    <div class="key-display-text" id="key-display-${key.id}">
-                                        ${key.key}
-                                    </div>
-                                    <button class="key-toggle-btn" onclick="toggleKeyVisibility('${key.id}', '${key.key}')">
-                                        👁️ Show
-                                    </button>
-                                    <button class="key-copy-btn" id="copy-btn-${key.id}" onclick="copyKey('${key.id}')" disabled>
-                                        📋 Copy
-                                    </button>
-                                </div>
-                                <div class="key-metadata">
-                                    ${key.admin_name ? `🔗 Admin: ${key.admin_name}` : ''}
-                                    ${key.organization_name ? `🏢 ${key.organization_name}` : ''}
-                                </div>
-                            </div>
-                            <div class="key-actions">
-                                <button class="btn btn-secondary btn-small" onclick="testSingleKey('${key.id}')">
-                                    Test
-                                </button>
-                                <button class="btn btn-secondary btn-small" onclick="editKey('${key.id}')">
-                                    Edit
-                                </button>
-                                <button class="btn btn-danger btn-small" onclick="deleteKey('${key.id}', '${key.name}')">
-                                    Delete
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                });
-                
-                html += `
-                        </div>
-                    </div>
-                `;
-            });
-            
-            keyList.innerHTML = html;
-        }
-
-        async function showAddKeyModal() {
-            editingKeyId = null;
-            document.getElementById('keyModalTitle').textContent = 'Add New API Key';
-            document.getElementById('keyName').value = '';
-            document.getElementById('keyValue').value = '';
-            document.getElementById('keyAccount').value = '';
-            document.getElementById('adminKey').value = '';
-            document.getElementById('adminKeyGroup').style.display = 'none';
-            clearKeyErrors();
-            hideTestResult();
-            
-            // Load accounts into dropdown
-            await loadAccountsIntoDropdown();
-            
-            document.getElementById('keyModal').classList.add('active');
-        }
-
-        async function editKey(keyId) {
-            const key = apiKeys.find(k => k.id === keyId);
-            if (!key) return;
-            
-            editingKeyId = keyId;
-            document.getElementById('keyModalTitle').textContent = 'Edit API Key';
-            document.getElementById('keyName').value = key.name;
-            document.getElementById('keyValue').value = '';
-            document.getElementById('keyValue').placeholder = 'Leave empty to keep current key, or enter new key';
-            document.getElementById('keyAccount').value = key.account_id || '';
-            clearKeyErrors();
-            hideTestResult();
-            
-            // Load accounts and admin keys
-            await loadAccountsIntoDropdown();
-            await loadAdminKeysForAccount(key.account_id);
-            
-            if (key.key_type === 'project') {
-                document.getElementById('adminKeyGroup').style.display = 'block';
-                document.getElementById('adminKey').value = key.admin_key_id || '';
-            }
-            
-            document.getElementById('keyModal').classList.add('active');
-        }
-
-        function closeKeyModal() {
-            document.getElementById('keyModal').classList.remove('active');
-            editingKeyId = null;
-            clearKeyErrors();
-            hideTestResult();
-        }
-
-        async function loadAccountsIntoDropdown() {
-            if (accounts.length === 0) {
-                await loadAccounts();
-            }
-            
-            const dropdown = document.getElementById('keyAccount');
-            dropdown.innerHTML = '<option value="">Select an account</option>';
-            
-            accounts.forEach(account => {
-                dropdown.innerHTML += `<option value="${account.id}">${account.email}</option>`;
-            });
-        }
-
-        async function loadAdminKeysForAccount(accountId) {
-            if (!accountId) return;
-            
-            try {
-                const response = await fetch(`/api/accounts/${accountId}/admin-keys`);
-                const adminKeys = await response.json();
-                
-                const dropdown = document.getElementById('adminKey');
-                dropdown.innerHTML = '<option value="">No admin key association</option>';
-                
-                adminKeys.forEach(key => {
-                    dropdown.innerHTML += `<option value="${key.id}">${key.name} (${key.masked_key})</option>`;
-                });
-            } catch (error) {
-                console.error('Failed to load admin keys:', error);
-            }
-        }
-
-        // Event handlers for key form
-        document.getElementById('keyAccount').addEventListener('change', function() {
-            const accountId = this.value;
-            const keyValue = document.getElementById('keyValue').value;
-            
-            if (accountId && keyValue.startsWith('sk-proj-')) {
-                document.getElementById('adminKeyGroup').style.display = 'block';
-                loadAdminKeysForAccount(accountId);
-            } else {
-                document.getElementById('adminKeyGroup').style.display = 'none';
-            }
-        });
-
-        document.getElementById('keyValue').addEventListener('input', function() {
-            const keyValue = this.value;
-            const accountId = document.getElementById('keyAccount').value;
-            
-            if (keyValue.startsWith('sk-proj-') && accountId) {
-                document.getElementById('adminKeyGroup').style.display = 'block';
-                loadAdminKeysForAccount(accountId);
-            } else {
-                document.getElementById('adminKeyGroup').style.display = 'none';
-            }
-        });
-
-        async function deleteKey(keyId, keyName) {
-            if (!confirm(`Are you sure you want to delete "${keyName}"? This action cannot be undone.`)) {
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/api/keys/${keyId}`, {
-                    method: 'DELETE'
-                });
-                
-                if (response.ok) {
-                    await loadApiKeys();
-                    if (Object.keys(usageData).length > 0) {
-                        refreshData();
-                    }
-                } else {
-                    const error = await response.json();
-                    alert(`Failed to delete key: ${error.error}`);
-                }
-            } catch (error) {
-                alert(`Network error: ${error.message}`);
-            }
-        }
-
-        async function testSingleKey(keyId) {
-            try {
-                const response = await fetch(`/api/keys/${keyId}/test`, {
-                    method: 'POST'
-                });
-                
-                const result = await response.json();
-                
-                if (result.status === 'success') {
-                    alert(`✓ ${result.message}`);
-                } else {
-                    alert(`✗ ${result.message}`);
-                }
-            } catch (error) {
-                alert(`Network error: ${error.message}`);
-            }
-        }
-
-        async function testApiKey() {
-            const keyValue = document.getElementById('keyValue').value.trim();
-            const accountId = document.getElementById('keyAccount').value;
-            
-            if (!keyValue) {
-                showKeyError('keyValueError', 'API key is required for testing');
-                return;
-            }
-            
-            if (!accountId) {
-                showKeyError('keyAccountError', 'Account selection is required');
-                return;
-            }
-            
-            if (!keyValue.startsWith('sk-')) {
-                showKeyError('keyValueError', 'Invalid OpenAI API key format - must start with sk-');
-                return;
-            }
-            
-            const testResult = document.getElementById('testResult');
-            testResult.style.display = 'block';
-            testResult.className = 'test-result';
-            testResult.innerHTML = 'Testing API key...';
-            
-            try {
-                const tempResponse = await fetch('/api/keys', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        name: `temp_test_${Date.now()}`,
-                        full_key: keyValue,
-                        account_id: accountId
-                    })
-                });
-                
-                if (!tempResponse.ok) {
-                    const error = await tempResponse.json();
-                    throw new Error(error.error);
-                }
-                
-                const tempKey = await tempResponse.json();
-                
-                const testResponse = await fetch(`/api/keys/${tempKey.id}/test`, {
-                    method: 'POST'
-                });
-                
-                const result = await testResponse.json();
-                
-                // Clean up temp key
-                await fetch(`/api/keys/${tempKey.id}`, {
-                    method: 'DELETE'
-                });
-                
-                if (result.status === 'success') {
-                    testResult.className = 'test-result success';
-                    testResult.innerHTML = `✓ ${result.message}`;
-                } else {
-                    testResult.className = 'test-result error';
-                    testResult.innerHTML = `✗ ${result.message}`;
-                }
-                
-            } catch (error) {
-                testResult.className = 'test-result error';
-                testResult.innerHTML = `✗ Test failed: ${error.message}`;
-            }
-        }
-
-        function clearKeyErrors() {
-            document.querySelectorAll('#keyModal .form-group').forEach(group => {
-                group.classList.remove('error');
-            });
-            document.querySelectorAll('#keyModal .form-error').forEach(error => {
-                error.textContent = '';
-            });
-        }
-
-        function showKeyError(elementId, message) {
-            const errorElement = document.getElementById(elementId);
-            errorElement.textContent = message;
-            errorElement.closest('.form-group').classList.add('error');
-        }
-
-        function hideTestResult() {
-            document.getElementById('testResult').style.display = 'none';
-        }
-
-        // Key form submission
-        document.getElementById('keyForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const name = document.getElementById('keyName').value.trim();
-            const keyValue = document.getElementById('keyValue').value.trim();
-            const accountId = document.getElementById('keyAccount').value;
-            const adminKeyId = document.getElementById('adminKey').value;
-            
-            clearKeyErrors();
-            
-            if (!name) {
-                showKeyError('keyNameError', 'Key name is required');
-                return;
-            }
-            
-            if (!accountId) {
-                showKeyError('keyAccountError', 'Account selection is required');
-                return;
-            }
-            
-            if (editingKeyId === null && !keyValue) {
-                showKeyError('keyValueError', 'API key is required');
-                return;
-            }
-            
-            if (keyValue && !keyValue.match(/^(sk-|BSA)/)) {
-                showKeyError('keyValueError', 'Invalid API key format - must start with sk- (OpenAI/Anthropic) or BSA (Brave)');
-                return;
-            }
-            
-            try {
-                const payload = { 
-                    name, 
-                    account_id: accountId,
-                    admin_key_id: adminKeyId || null
-                };
-                if (keyValue) {
-                    payload.full_key = keyValue;
-                }
-                
-                const url = editingKeyId ? `/api/keys/${editingKeyId}` : '/api/keys';
-                const method = editingKeyId ? 'PUT' : 'POST';
-                
-                const response = await fetch(url, {
-                    method: method,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                if (response.ok) {
-                    closeKeyModal();
-                    await loadApiKeys();
-                    if (Object.keys(usageData).length > 0) {
-                        refreshData();
-                    }
-                } else {
-                    const error = await response.json();
-                    if (error.error.includes('name already exists')) {
-                        showKeyError('keyNameError', error.error);
-                    } else if (error.error.includes('Invalid')) {
-                        showKeyError('keyValueError', error.error);
-                    } else if (error.error.includes('Account')) {
-                        showKeyError('keyAccountError', error.error);
-                    } else {
-                        alert(`Error: ${error.error}`);
-                    }
-                }
-            } catch (error) {
-                alert(`Network error: ${error.message}`);
-            }
-        });
-
-        // Modal event handlers
-        document.getElementById('accountModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeAccountModal();
-            }
-        });
-
-        document.getElementById('keyModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeKeyModal();
-            }
-        });
-
-        // Usage Dashboard Functions
-        async function refreshData() {
-            if (apiKeys.length === 0) {
-                document.getElementById('apiKeysSection').innerHTML = `
-                    <div style="text-align: center; color: #6b7280; padding: 40px;">
-                        <h3>No API Keys Configured</h3>
-                        <p>Add some API keys above to start monitoring usage data.</p>
-                    </div>
-                `;
-                document.getElementById('summarySection').innerHTML = '';
-                return;
-            }
-
-            const refreshBtn = document.getElementById('refreshBtn');
-            const timeRange = document.getElementById('timeRange').value;
-            
-            refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '🔄 Loading...';
-            
-            document.getElementById('apiKeysSection').innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Fetching real usage data from OpenAI API...</p>
-                </div>
-            `;
-
-            try {
-                const response = await fetch(`/api/usage?days=${timeRange}`);
-                const data = await response.json();
-                
-                usageData = data;
-                renderDashboard();
-                
-            } catch (error) {
-                document.getElementById('apiKeysSection').innerHTML = `
-                    <div class="error-message">
-                        ✗ Failed to fetch data: ${error.message}
-                    </div>
-                `;
-            }
-            
-            refreshBtn.disabled = false;
-            refreshBtn.innerHTML = '🔄 Refresh Data';
-        }
-
-        function renderDashboard() {
-            renderSummary();
-            renderApiKeys();
-        }
-
-        function renderSummary() {
-            const summarySection = document.getElementById('summarySection');
-            
-            let totalActiveKeys = 0;
-            let totalCost = 0;
-            let totalTokens = 0;
-            let errorCount = 0;
-
-            Object.values(usageData).forEach(keyData => {
-                if (keyData.status === 'success') {
-                    totalActiveKeys++;
-                    if (keyData.costs && keyData.costs.data) {
-                        const dailyCosts = keyData.costs.data;
-                        totalCost += dailyCosts.reduce((sum, day) => sum + (day.cost || 0), 0);
-                    }
-                    if (keyData.usage && keyData.usage.data) {
-                        const dailyUsage = keyData.usage.data;
-                        totalTokens += dailyUsage.reduce((sum, day) => sum + (day.n_requests || 0), 0);
-                    }
-                } else {
-                    errorCount++;
-                }
-            });
-
-            summarySection.innerHTML = `
-                <div class="summary-cards">
-                    <div class="summary-card">
-                        <h3>${totalActiveKeys}</h3>
-                        <p>Active API Keys</p>
-                    </div>
-                    <div class="summary-card">
-                        <h3>${totalCost.toFixed(2)}</h3>
-                        <p>Total Spend</p>
-                    </div>
-                    <div class="summary-card">
-                        <h3>${totalTokens.toLocaleString()}</h3>
-                        <p>Total Requests</p>
-                    </div>
-                    <div class="summary-card">
-                        <h3>${errorCount}</h3>
-                        <p>Key Errors</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderApiKeys() {
-            const apiKeysSection = document.getElementById('apiKeysSection');
-            
-            let html = '';
-            Object.values(usageData).forEach(keyData => {
-                html += renderApiKeyCard(keyData);
-            });
-            
-            apiKeysSection.innerHTML = html;
-        }
-
-        function renderApiKeyCard(keyData) {
-            const statusMap = {
-                'success': { class: 'status-active', text: 'Active' },
-                'error': { class: 'status-error', text: 'Error' },
-                'partial': { class: 'status-partial', text: 'Partial' },
-                'basic_only': { class: 'status-basic', text: 'Basic Only' }
-            };
-            
-            const status = statusMap[keyData.status] || { class: 'status-error', text: 'Unknown' };
-            
-            let html = `
-                <div class="api-key-item">
-                    <div class="api-key-header">
-                        <div style="flex: 1;">
-                            <div class="api-key-name">${keyData.name}</div>
-                            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
-                                ${keyData.account_email ? `📧 ${keyData.account_email}` : ''}
-                                ${keyData.key_type ? `• ${keyData.key_type.toUpperCase()} key` : ''}
-                                ${keyData.usage_key_source ? `• ${keyData.usage_key_source}` : ''}
-                            </div>
-                        </div>
-                        <span class="status-badge ${status.class}">${status.text}</span>
-                    </div>
-                    <div class="key-display-container">
-                        <div class="key-display-text" id="usage-key-display-${keyData.id}">
-                            ${keyData.key}
-                        </div>
-                        <button class="key-toggle-btn" onclick="toggleUsageKeyVisibility('${keyData.id}', '${keyData.key}')">
-                            👁️ Show
-                        </button>
-                        <button class="key-copy-btn" id="usage-copy-btn-${keyData.id}" onclick="copyUsageKey('${keyData.id}')" disabled>
-                            📋 Copy
-                        </button>
-                    </div>
-            `;
-
-            if (keyData.status === 'error') {
-                const errorDetails = keyData.error_details;
-                html += `
-                    <div class="error-details">
-                        <div class="error-title">
-                            ${errorDetails.icon} ${errorDetails.title}
-                        </div>
-                        <div class="error-description">
-                            ${errorDetails.description}
-                        </div>
-                        <div class="error-solutions">
-                            <h5>How to fix this:</h5>
-                            <ul>
-                                ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    <div class="error-message">
-                        <strong>Technical Details:</strong> ${keyData.error}
-                    </div>
-                `;
-            } else {
-                let totalCost = 0;
-                let totalRequests = 0;
-                let totalTokens = 0;
-
-                if (keyData.costs && keyData.costs.data) {
-                    totalCost = keyData.costs.data.reduce((sum, day) => sum + (day.cost || 0), 0);
-                }
-
-                if (keyData.usage && keyData.usage.data) {
-                    const usageData = keyData.usage.data;
-                    totalRequests = usageData.reduce((sum, day) => sum + (day.n_requests || 0), 0);
-                    totalTokens = usageData.reduce((sum, day) => sum + (day.n_context_tokens_total || 0) + (day.n_generated_tokens_total || 0), 0);
-                }
-
-                html += `
-                    <div class="usage-grid">
-                        <div class="usage-card">
-                            <h4>Total Cost</h4>
-                            <div class="value">${totalCost.toFixed(2)}</div>
-                            <div class="subtext">Last ${document.getElementById('timeRange').value} days</div>
-                        </div>
-                        <div class="usage-card">
-                            <h4>Total Requests</h4>
-                            <div class="value">${totalRequests.toLocaleString()}</div>
-                            <div class="subtext">API calls made</div>
-                        </div>
-                        <div class="usage-card">
-                            <h4>Total Tokens</h4>
-                            <div class="value">${totalTokens.toLocaleString()}</div>
-                            <div class="subtext">Input + output tokens</div>
-                        </div>
-                        <div class="usage-card">
-                            <h4>Avg Cost/Request</h4>
-                            <div class="value">${totalRequests > 0 ? (totalCost / totalRequests).toFixed(4) : '0.0000'}</div>
-                            <div class="subtext">Per API call</div>
-                        </div>
-                    </div>
-                `;
-
-                // Show usage/costs errors if present
-                if (keyData.usage_error) {
-                    const errorDetails = keyData.usage_error.error_details;
-                    html += `
-                        <div class="error-details" style="margin-top: 15px;">
-                            <div class="error-title">
-                                ${errorDetails.icon} Usage API: ${errorDetails.title}
-                            </div>
-                            <div class="error-description">
-                                ${errorDetails.description}
-                            </div>
-                            <div class="error-solutions">
-                                <h5>How to fix this:</h5>
-                                <ul>
-                                    ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
-                                </ul>
-                            </div>
-                        </div>
-                    `;
-                }
-
-                if (keyData.costs_error) {
-                    const errorDetails = keyData.costs_error.error_details;
-                    html += `
-                        <div class="error-details" style="margin-top: 15px;">
-                            <div class="error-title">
-                                ${errorDetails.icon} Costs API: ${errorDetails.title}
-                            </div>
-                            <div class="error-description">
-                                ${errorDetails.description}
-                            </div>
-                            <div class="error-solutions">
-                                <h5>How to fix this:</h5>
-                                <ul>
-                                    ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
-                                </ul>
-                            </div>
-                        </div>
-                    `;
-                }
-            }
-
-            html += `</div>`;
-            return html;
-        }
-
-        // Initialize the app
-        document.addEventListener('DOMContentLoaded', function() {
-            loadAccounts().then(() => {
-                loadApiKeys();
-            });
-        });
-
-        // Help function for key issues
-        function showKeyHelp() {
-            alert(`🔧 How to Fix API Key Permission Issues:
-
-1. Go to https://platform.openai.com/api-keys
-2. Create a new API key with these settings:
-   • Permissions: "All" (not restricted)
-   • Scope: "All endpoints" 
-   • Owner/Admin role in your organization
-
-3. Replace your current keys with the new unrestricted ones
-
-4. If you still get permission errors:
-   • Check your OpenAI billing is active
-   • Verify you're an Owner/Admin in your org
-   • Contact OpenAI support for Usage API access
-
-Note: Even with proper keys, Usage API access is rare and requires special permission from OpenAI.`);
-        }
-
-        // Key visibility and copy functions
-        let visibleKeys = new Set(); // Track which keys are currently visible
-        let visibleUsageKeys = new Set(); // Track which usage keys are currently visible
-
-        function toggleKeyVisibility(keyId, maskedKey) {
-            const displayElement = document.getElementById(`key-display-${keyId}`);
-            const toggleBtn = displayElement.nextElementSibling;
-            const copyBtn = document.getElementById(`copy-btn-${keyId}`);
-            
-            if (visibleKeys.has(keyId)) {
-                // Hide the key
-                displayElement.textContent = maskedKey;
-                toggleBtn.textContent = '👁️ Show';
-                copyBtn.disabled = true;
-                visibleKeys.delete(keyId);
-            } else {
-                // Show the key - need to fetch the full key
-                showFullKey(keyId, displayElement, toggleBtn, copyBtn, 'key');
-            }
-        }
-
-        function toggleUsageKeyVisibility(keyId, maskedKey) {
-            const displayElement = document.getElementById(`usage-key-display-${keyId}`);
-            const toggleBtn = displayElement.nextElementSibling;
-            const copyBtn = document.getElementById(`usage-copy-btn-${keyId}`);
-            
-            if (visibleUsageKeys.has(keyId)) {
-                // Hide the key
-                displayElement.textContent = maskedKey;
-                toggleBtn.textContent = '👁️ Show';
-                copyBtn.disabled = true;
-                visibleUsageKeys.delete(keyId);
-            } else {
-                // Show the key - need to fetch the full key
-                showFullKey(keyId, displayElement, toggleBtn, copyBtn, 'usage');
-            }
-        }
-
-        async function showFullKey(keyId, displayElement, toggleBtn, copyBtn, type) {
-            try {
-                // Find the full key from our apiKeys data
-                const key = apiKeys.find(k => k.id === keyId);
-                if (!key) {
-                    alert('Key not found');
-                    return;
-                }
-                
-                // We don't have the full key in the frontend, so we need to fetch it
-                const response = await fetch(`/api/keys/${keyId}/full`, {
-                    method: 'GET'
-                });
-                
-                if (!response.ok) {
-                    alert('Failed to fetch full key');
-                    return;
-                }
-                
-                const data = await response.json();
-                displayElement.textContent = data.full_key;
-                displayElement.setAttribute('data-full-key', data.full_key);
-                toggleBtn.textContent = '🙈 Hide';
-                copyBtn.disabled = false;
-                
-                if (type === 'key') {
-                    visibleKeys.add(keyId);
-                } else {
-                    visibleUsageKeys.add(keyId);
-                }
-                
-            } catch (error) {
-                alert('Error fetching key: ' + error.message);
-            }
-        }
-
-        function copyKey(keyId) {
-            const displayElement = document.getElementById(`key-display-${keyId}`);
-            const fullKey = displayElement.getAttribute('data-full-key');
-            
-            if (fullKey) {
-                navigator.clipboard.writeText(fullKey).then(() => {
-                    const copyBtn = document.getElementById(`copy-btn-${keyId}`);
-                    const originalText = copyBtn.textContent;
-                    copyBtn.textContent = '✅ Copied!';
-                    setTimeout(() => {
-                        copyBtn.textContent = originalText;
-                    }, 2000);
-                }).catch(() => {
-                    alert('Failed to copy to clipboard');
-                });
-            }
-        }
-
-        function copyUsageKey(keyId) {
-            const displayElement = document.getElementById(`usage-key-display-${keyId}`);
-            const fullKey = displayElement.getAttribute('data-full-key');
-            
-            if (fullKey) {
-                navigator.clipboard.writeText(fullKey).then(() => {
-                    const copyBtn = document.getElementById(`usage-copy-btn-${keyId}`);
-                    const originalText = copyBtn.textContent;
-                    copyBtn.textContent = '✅ Copied!';
-                    setTimeout(() => {
-                        copyBtn.textContent = originalText;
-                    }, 2000);
-                }).catch(() => {
-                    alert('Failed to copy to clipboard');
-                });
-            }
-        }
-    </script>
-</body>
-</html>
+if __name__ == '__main__':
+    print("🚀 Starting OpenAI Usage Dashboard with SQLite Database...")
+    print("📊 Dashboard will be available at: http://localhost:5000")
+    print("🔧 Make sure you have the required packages: pip install flask flask-cors requests")
+    print("💾 Database file: api_keys.db")
+    
+    # Initialize database
+    if not os.path.exists(DB_FILE):
+        print("📦 Creating new database...")
+        init_database()
+        print("✅ Database initialized!")
+    else:
+        print("📂 Using existing database...")
+        # Make sure we have the latest schema
+        init_database()
+    
+    app.run(debug=True, host='0.0.0.0', port=5000)
