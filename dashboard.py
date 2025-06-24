@@ -327,14 +327,12 @@ def get_error_details(error_message, status_code):
     })
 
 def fetch_openai_usage(api_key, days=30):
-    """Fetch usage data from OpenAI's Usage API with improved request handling"""
+    """Fetch usage data from OpenAI's Usage API - focus only on usage monitoring"""
     start_time = int(time.time()) - (days * 24 * 60 * 60)
     
-    # Match curl headers exactly
     headers = {
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
-        # Removed User-Agent - might be causing issues
     }
     
     result = {}
@@ -345,36 +343,7 @@ def fetch_openai_usage(api_key, days=30):
     print(f"Key length: {len(api_key)}")
     print(f"Key starts with: {api_key[:10]}")
     
-    # Test basic authentication first with models endpoint
-    try:
-        print(f"Testing basic API access...")
-        models_response = requests.get(
-            'https://api.openai.com/v1/models',
-            headers=headers,
-            timeout=30,
-            verify=True
-        )
-        
-        print(f"Models API response: {models_response.status_code}")
-        if models_response.status_code != 200:
-            print(f"Models API error: {models_response.text}")
-            result['error'] = f"Basic API test failed: {models_response.status_code} - {models_response.text}"
-            result['error_details'] = get_error_details(models_response.text, models_response.status_code)
-            result['status'] = 'error'
-            result['status_code'] = models_response.status_code
-            return result
-        
-        print(f"✓ Basic API access works")
-        result['models_accessible'] = True
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Models API network error: {str(e)}")
-        result['error'] = f"Network error during basic test: {str(e)}"
-        result['error_details'] = get_error_details(str(e), None)
-        result['status'] = 'error'
-        return result
-    
-    # Try Usage API with the same format as successful curl
+    # Go straight to Usage API - this is what we care about
     usage_params = {
         'start_time': start_time,
         'bucket_width': '1d',
@@ -405,6 +374,7 @@ def fetch_openai_usage(api_key, days=30):
                 'error': f"Usage API failed: {usage_response.status_code} - {usage_response.text}",
                 'error_details': get_error_details(usage_response.text, usage_response.status_code)
             }
+            result['status'] = 'error'
             
     except requests.exceptions.RequestException as e:
         print(f"✗ Usage API network error: {str(e)}")
@@ -412,6 +382,7 @@ def fetch_openai_usage(api_key, days=30):
             'error': f"Usage API network error: {str(e)}",
             'error_details': get_error_details(str(e), None)
         }
+        result['status'] = 'error'
     
     # Try Costs API
     costs_params = {
@@ -435,6 +406,7 @@ def fetch_openai_usage(api_key, days=30):
             print(f"✓ Costs API access works!")
             costs_json = costs_response.json()
             result['costs'] = costs_json
+            # If we didn't get usage but got costs, that's still partial success
             if result.get('status') != 'success':
                 result['status'] = 'partial'
         else:
@@ -452,16 +424,15 @@ def fetch_openai_usage(api_key, days=30):
             'error_details': get_error_details(str(e), None)
         }
     
-    # Determine final status
-    if result.get('status') != 'success':
-        if result.get('models_accessible'):
-            if result.get('usage') or result.get('costs'):
-                result['status'] = 'partial'
-            else:
-                result['status'] = 'basic_only'
-                result['message'] = "API key works for basic calls but not Usage/Costs APIs"
+    # If we have usage or costs data, consider it success/partial
+    if result.get('usage') or result.get('costs'):
+        if result.get('usage') and result.get('costs'):
+            result['status'] = 'success'
         else:
-            result['status'] = 'error'
+            result['status'] = 'partial'
+    elif result.get('status') != 'error':
+        result['status'] = 'no_usage_access'
+        result['message'] = "API key cannot access usage monitoring endpoints"
     
     return result
 
