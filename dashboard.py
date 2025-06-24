@@ -1,20 +1,4 @@
-@app.route('/api/usage')
-def get_usage():
-    """API endpoint to fetch usage data only for admin keys, with associated project keys shown as inventory"""
-    days = request.args.get('days', 30, type=int)
-    
-    results = {}
-    all_keys = get_all_keys()
-    
-    # Group keys by account and separate admin from project keys
-    admin_keys = [key for key in all_keys if key['key_type'] == 'admin']
-    project_keys = [key for key in all_keys if key['key_type'] == 'project']
-    
-    print(f"Found {len(admin_keys)} admin keys and {len(project_keys)} project keys")
-    print("Admin keys:", [key['name'] for key in admin_keys])
-    print("Project keys:", [key['name'] for key in project_keys])
-    
-    # Process admin#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 OpenAI API Usage Dashboard Backend with SQLite Database
 Run this Python server to fetch real usage data from OpenAI's API
@@ -353,6 +337,12 @@ def fetch_openai_usage(api_key, days=30):
     }
     
     result = {}
+    
+    # Debug: Print key info (masked for security)
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing key: {key_preview}")
+    print(f"Key length: {len(api_key)}")
+    print(f"Key starts with: {api_key[:10]}")
     
     # Test basic authentication first with models endpoint
     try:
