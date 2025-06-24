@@ -194,7 +194,41 @@ def fetch_brave_usage(api_key, days=30):
         costs_response = requests.get(
             'https://api.openai.com/v1/organization/costs',
             headers=headers,
-            params=costs_params,#!/usr/bin/env python3
+            params=costs_params,
+            timeout=10,
+            verify=True
+        )
+        
+        print(f"Costs API response: {costs_response.status_code}")
+        if costs_response.status_code == 200:
+            print(f"✓ Costs API access works!")
+            costs_json = costs_response.json()
+            result['costs'] = costs_json
+            has_costs = True
+        else:
+            print(f"✗ Costs API failed: {costs_response.status_code}")
+            result['costs_error'] = {
+                'error': f"Costs API failed: {costs_response.status_code} - {costs_response.text}",
+                'error_details': get_error_details(costs_response.text, costs_response.status_code)
+            }
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Costs API network error: {str(e)}")
+        result['costs_error'] = {
+            'error': f"Costs API network error: {str(e)}",
+            'error_details': get_error_details(str(e), None)
+        }
+    
+    # Determine final status based on what we got
+    if has_usage and has_costs:
+        result['status'] = 'success'
+    elif has_usage or has_costs:
+        result['status'] = 'partial'
+    else:
+        result['status'] = 'no_usage_access'
+        result['message'] = "API key cannot access usage monitoring endpoints"
+    
+    return result#!/usr/bin/env python3
 """
 OpenAI API Usage Dashboard Backend with SQLite Database
 Run this Python server to fetch real usage data from OpenAI's API
