@@ -1,4 +1,200 @@
-#!/usr/bin/env python3
+def fetch_openai_usage(api_key, days=30):
+    """Fetch usage data from various AI API providers"""
+    key_info = detect_key_type(api_key)
+    provider = key_info['provider']
+    key_type = key_info['type']
+    
+    print(f"Detected provider: {provider}, type: {key_type}")
+    
+    if provider == 'openai':
+        return fetch_openai_usage(api_key, days)
+    elif provider == 'anthropic':
+        return fetch_anthropic_usage(api_key, days)
+    elif provider == 'brave':
+        return fetch_brave_usage(api_key, days)
+    else:
+        return {
+            'status': 'unsupported',
+            'message': f'Unsupported API provider: {provider}',
+            'error': f'API key format not recognized: {api_key[:10]}...'
+        }
+
+def fetch_anthropic_usage(api_key, days=30):
+    """Fetch usage data from Anthropic API"""
+    headers = {
+        'x-api-key': api_key,
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01'
+    }
+    
+    result = {'provider': 'anthropic'}
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing Anthropic key: {key_preview}")
+    
+    # Test basic access with a simple completion
+    try:
+        print(f"Testing Anthropic API access...")
+        test_response = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers=headers,
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "Hi"}]
+            },
+            timeout=10
+        )
+        
+        print(f"Anthropic API response: {test_response.status_code}")
+        if test_response.status_code == 200:
+            print(f"✓ Anthropic API access works!")
+            result['status'] = 'success'
+            result['basic_access'] = True
+            # Note: Anthropic doesn't have a public usage API like OpenAI
+            result['message'] = 'Anthropic API key is working (no usage API available)'
+        else:
+            print(f"✗ Anthropic API failed: {test_response.status_code}")
+            result['status'] = 'error'
+            result['error'] = f"Anthropic API failed: {test_response.status_code} - {test_response.text}"
+            result['error_details'] = get_error_details(test_response.text, test_response.status_code)
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Anthropic API network error: {str(e)}")
+        result['status'] = 'error'
+        result['error'] = f"Anthropic API network error: {str(e)}"
+        result['error_details'] = get_error_details(str(e), None)
+    
+    return result
+
+def fetch_brave_usage(api_key, days=30):
+    """Fetch usage data from Brave Search API"""
+    headers = {
+        'X-Subscription-Token': api_key,
+        'Accept': 'application/json'
+    }
+    
+    result = {'provider': 'brave'}
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing Brave Search key: {key_preview}")
+    
+    # Test basic access with a simple search
+    try:
+        print(f"Testing Brave Search API access...")
+        test_response = requests.get(
+            'https://api.search.brave.com/res/v1/web/search',
+            headers=headers,
+            params={
+                'q': 'test',
+                'count': 1
+            },
+            timeout=10
+        )
+        
+        print(f"Brave Search API response: {test_response.status_code}")
+        if test_response.status_code == 200:
+            print(f"✓ Brave Search API access works!")
+            result['status'] = 'success'
+            result['basic_access'] = True
+            result['message'] = 'Brave Search API key is working'
+            
+            # Try to get usage information if available
+            try:
+                usage_response = requests.get(
+                    'https://api.search.brave.com/res/v1/usage',
+                    headers=headers,
+                    timeout=10
+                )
+                if usage_response.status_code == 200:
+                    print(f"✓ Brave usage data available!")
+                    result['usage'] = usage_response.json()
+                else:
+                    print(f"✗ Brave usage API not available: {usage_response.status_code}")
+            except:
+                print(f"✗ Brave usage API not accessible")
+                
+        else:
+            print(f"✗ Brave Search API failed: {test_response.status_code}")
+            result['status'] = 'error'
+            result['error'] = f"Brave Search API failed: {test_response.status_code} - {test_response.text}"
+            result['error_details'] = get_error_details(test_response.text, test_response.status_code)
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Brave Search API network error: {str(e)}")
+        result['status'] = 'error'
+        result['error'] = f"Brave Search API network error: {str(e)}"
+        result['error_details'] = get_error_details(str(e), None)
+    
+    return result
+    """Fetch usage data from OpenAI's Usage API - focus only on usage monitoring"""
+    start_time = int(time.time()) - (days * 24 * 60 * 60)
+    
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    
+    result = {'status': 'unknown'}  # Initialize status
+    
+    # Debug: Print key info (masked for security)
+    key_preview = f"{api_key[:15]}...{api_key[-15:]}" if len(api_key) > 30 else "SHORT_KEY"
+    print(f"Testing key: {key_preview}")
+    print(f"Key length: {len(api_key)}")
+    print(f"Key starts with: {api_key[:10]}")
+    
+    has_usage = False
+    has_costs = False
+    
+    # Go straight to Usage API - this is what we care about
+    usage_params = {
+        'start_time': start_time,
+        'bucket_width': '1d',
+        'limit': days
+    }
+    
+    try:
+        print(f"Testing Usage API access...")
+        usage_response = requests.get(
+            'https://api.openai.com/v1/organization/usage/completions',
+            headers=headers,
+            params=usage_params,
+            timeout=10,  # Shorter timeout
+            verify=True
+        )
+        
+        print(f"Usage API response: {usage_response.status_code}")
+        if usage_response.status_code == 200:
+            print(f"✓ Usage API access works!")
+            usage_json = usage_response.json()
+            print(f"Usage data: {len(usage_json.get('data', []))} buckets")
+            result['usage'] = usage_json
+            has_usage = True
+        else:
+            print(f"✗ Usage API failed: {usage_response.status_code}")
+            result['usage_error'] = {
+                'error': f"Usage API failed: {usage_response.status_code} - {usage_response.text}",
+                'error_details': get_error_details(usage_response.text, usage_response.status_code)
+            }
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Usage API network error: {str(e)}")
+        result['usage_error'] = {
+            'error': f"Usage API network error: {str(e)}",
+            'error_details': get_error_details(str(e), None)
+        }
+    
+    # Try Costs API
+    costs_params = {
+        'start_time': start_time,
+        'bucket_width': '1d',
+        'limit': days
+    }
+    
+    try:
+        print(f"Testing Costs API access...")
+        costs_response = requests.get(
+            'https://api.openai.com/v1/organization/costs',
+            headers=headers,
+            params=costs_params,#!/usr/bin/env python3
 """
 OpenAI API Usage Dashboard Backend with SQLite Database
 Run this Python server to fetch real usage data from OpenAI's API
@@ -41,6 +237,7 @@ def init_database():
                 full_key TEXT NOT NULL,
                 masked_key TEXT NOT NULL,
                 key_type TEXT DEFAULT 'project',
+                provider TEXT DEFAULT 'openai',
                 account_id INTEGER,
                 admin_key_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -68,6 +265,14 @@ def init_database():
             print(f"✅ Migrated {updated_keys} existing keys to default account")
         
         conn.commit()
+        
+        # Add provider column if it doesn't exist (migration)
+        try:
+            conn.execute('ALTER TABLE api_keys ADD COLUMN provider TEXT DEFAULT "openai"')
+            conn.commit()
+            print("✅ Added provider column to existing database")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         # Print current state for debugging
         cursor = conn.execute('SELECT COUNT(*) FROM accounts')
@@ -186,13 +391,13 @@ def get_key_by_id(key_id):
         row = cursor.fetchone()
         return dict(row) if row else None
 
-def add_key(name, full_key, key_type='project', account_id=None, admin_key_id=None):
+def add_key(name, full_key, key_type='project', account_id=None, admin_key_id=None, provider='openai'):
     """Add a new API key to database"""
     masked_key = mask_api_key(full_key)
     with get_db() as conn:
         cursor = conn.execute(
-            'INSERT INTO api_keys (name, full_key, masked_key, key_type, account_id, admin_key_id) VALUES (?, ?, ?, ?, ?, ?)',
-            (name, full_key, masked_key, key_type, account_id, admin_key_id)
+            'INSERT INTO api_keys (name, full_key, masked_key, key_type, provider, account_id, admin_key_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (name, full_key, masked_key, key_type, provider, account_id, admin_key_id)
         )
         conn.commit()
         return cursor.lastrowid
@@ -229,13 +434,19 @@ def check_name_exists(name, account_id, exclude_id=None):
         return cursor.fetchone()[0] > 0
 
 def detect_key_type(api_key):
-    """Detect if key is admin or project based on prefix"""
+    """Detect API provider and key type based on format"""
     if api_key.startswith('sk-admin-'):
-        return 'admin'
+        return {'provider': 'openai', 'type': 'admin'}
     elif api_key.startswith('sk-proj-'):
-        return 'project'
+        return {'provider': 'openai', 'type': 'project'}
+    elif api_key.startswith('sk-'):
+        return {'provider': 'openai', 'type': 'project'}  # Default for older OpenAI formats
+    elif api_key.startswith('sk-ant-'):
+        return {'provider': 'anthropic', 'type': 'project'}
+    elif api_key.startswith('BSA'):
+        return {'provider': 'brave', 'type': 'search'}
     else:
-        return 'project'  # Default for older key formats
+        return {'provider': 'unknown', 'type': 'unknown'}
 
 def get_error_details(error_message, status_code):
     """Map HTTP status codes to user-friendly error messages"""
@@ -580,20 +791,23 @@ def add_key_endpoint():
     if not account_id:
         return jsonify({'error': 'Account ID is required'}), 400
     
-    # Auto-detect key type
-    key_type = detect_key_type(full_key)
+    # Auto-detect key provider and type
+    key_info = detect_key_type(full_key)
+    provider = key_info['provider']
+    key_type = key_info['type']
     
     # Check for duplicate names in this account
     if check_name_exists(name, account_id):
         return jsonify({'error': 'API key name already exists for this account'}), 400
     
     try:
-        key_id = add_key(name, full_key, key_type, account_id, admin_key_id)
+        key_id = add_key(name, full_key, key_type, account_id, admin_key_id, provider)
         return jsonify({
             'id': str(key_id),
             'name': name,
             'key': mask_api_key(full_key),
-            'key_type': key_type
+            'key_type': key_type,
+            'provider': provider
         }), 201
     except Exception as e:
         return jsonify({'error': f'Database error: {str(e)}'}), 500
@@ -725,7 +939,7 @@ def get_usage():
         print(f"Fetching usage for admin key: {admin_key['name']} - Account: {admin_key['account_email']}")
         
         # Fetch usage data for admin key
-        usage_data = fetch_openai_usage(admin_key['full_key'], days)
+        usage_data = fetch_api_usage(admin_key['full_key'], days)
         
         # Find associated project keys for this admin key
         associated_projects = [
