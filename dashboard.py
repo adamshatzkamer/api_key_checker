@@ -683,6 +683,27 @@ def fetch_openai_usage(api_key, days=30):
     
     return result
 
+def fetch_api_usage(api_key, days=30):
+    """Fetch usage data from various AI API providers"""
+    key_info = detect_key_type(api_key)
+    provider = key_info['provider']
+    key_type = key_info['type']
+    
+    print(f"Detected provider: {provider}, type: {key_type}")
+    
+    if provider == 'openai':
+        return fetch_openai_usage(api_key, days)
+    elif provider == 'anthropic':
+        return fetch_anthropic_usage(api_key, days)
+    elif provider == 'brave':
+        return fetch_brave_usage(api_key, days)
+    else:
+        return {
+            'status': 'unsupported',
+            'message': f'Unsupported API provider: {provider}',
+            'error': f'API key format not recognized: {api_key[:10]}...'
+        }
+
 # Flask Routes
 
 @app.route('/')
@@ -974,8 +995,26 @@ def get_usage():
     for admin_key in admin_keys:
         print(f"Fetching usage for admin key: {admin_key['name']} - Account: {admin_key['account_email']}")
         
-        # Fetch usage data for admin key
-        usage_data = fetch_api_usage(admin_key['full_key'], days)
+def fetch_api_usage(api_key, days=30):
+    """Fetch usage data from various AI API providers"""
+    key_info = detect_key_type(api_key)
+    provider = key_info['provider']
+    key_type = key_info['type']
+    
+    print(f"Detected provider: {provider}, type: {key_type}")
+    
+    if provider == 'openai':
+        return fetch_openai_usage(api_key, days)
+    elif provider == 'anthropic':
+        return fetch_anthropic_usage(api_key, days)
+    elif provider == 'brave':
+        return fetch_brave_usage(api_key, days)
+    else:
+        return {
+            'status': 'unsupported',
+            'message': f'Unsupported API provider: {provider}',
+            'error': f'API key format not recognized: {api_key[:10]}...'
+        }
         
         # Find associated project keys for this admin key
         associated_projects = [
