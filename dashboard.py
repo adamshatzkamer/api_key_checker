@@ -53,11 +53,11 @@ def init_database():
         # Create default account if none exists
         cursor = conn.execute('''
             INSERT OR IGNORE INTO accounts (email, name, organization_name) 
-            VALUES ('adam@shatzkamer.com', 'Adam Shatzkamer', 'AstraMedia')
+            VALUES ('user@example.com', 'Default User', 'My Organization')
         ''')
         
         # Get the default account ID
-        cursor = conn.execute('SELECT id FROM accounts WHERE email = ?', ('adam@shatzkamer.com',))
+        cursor = conn.execute('SELECT id FROM accounts WHERE email = ?', ('user@example.com',))
         default_account_id = cursor.fetchone()[0]
         
         # Update any keys that don't have an account_id to use the default account
@@ -660,6 +660,18 @@ def delete_key_endpoint(key_id):
         return jsonify({'message': 'API key deleted successfully'})
     except Exception as e:
         return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/keys/<key_id>/full', methods=['GET'])
+def get_full_key(key_id):
+    """Get the full API key (for copying) - security sensitive endpoint"""
+    key = get_key_by_id(key_id)
+    if not key:
+        return jsonify({'error': 'API key not found'}), 404
+    
+    # Return only the full key for copying purposes
+    return jsonify({
+        'full_key': key['full_key']
+    })
 
 @app.route('/api/keys/<key_id>/test', methods=['POST'])
 def test_key_endpoint(key_id):

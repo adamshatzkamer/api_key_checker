@@ -117,6 +117,13 @@
         .summary-card h3 { font-size: 2rem; margin-bottom: 5px; }
         .summary-card p { opacity: 0.9; font-size: 1.1rem; }
         .key-masking { font-family: monospace; font-size: 14px; background: #f1f5f9; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0; }
+        .key-display-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        .key-display-text { font-family: monospace; font-size: 12px; background: #f1f5f9; padding: 6px 8px; border-radius: 4px; border: 1px solid #e2e8f0; flex: 1; }
+        .key-toggle-btn { background: #6b7280; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; transition: background 0.2s; }
+        .key-toggle-btn:hover { background: #4b5563; }
+        .key-copy-btn { background: #10b981; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; transition: background 0.2s; }
+        .key-copy-btn:hover { background: #059669; }
+        .key-copy-btn:disabled { background: #9ca3af; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -513,7 +520,17 @@
                                         ${key.key_type}
                                     </span>
                                 </div>
-                                <div class="key-display">${key.key}</div>
+                                <div class="key-display-container">
+                                    <div class="key-display-text" id="key-display-${key.id}">
+                                        ${key.key}
+                                    </div>
+                                    <button class="key-toggle-btn" onclick="toggleKeyVisibility('${key.id}', '${key.key}')">
+                                        👁️ Show
+                                    </button>
+                                    <button class="key-copy-btn" id="copy-btn-${key.id}" onclick="copyKey('${key.id}')" disabled>
+                                        📋 Copy
+                                    </button>
+                                </div>
                                 <div class="key-metadata">
                                     ${key.admin_name ? `🔗 Admin: ${key.admin_name}` : ''}
                                     ${key.organization_name ? `🏢 ${key.organization_name}` : ''}
@@ -996,7 +1013,17 @@
                         </div>
                         <span class="status-badge ${status.class}">${status.text}</span>
                     </div>
-                    <div class="key-masking">${keyData.key}</div>
+                    <div class="key-display-container">
+                        <div class="key-display-text" id="usage-key-display-${keyData.id}">
+                            ${keyData.key}
+                        </div>
+                        <button class="key-toggle-btn" onclick="toggleUsageKeyVisibility('${keyData.id}', '${keyData.key}')">
+                            👁️ Show
+                        </button>
+                        <button class="key-copy-btn" id="usage-copy-btn-${keyData.id}" onclick="copyUsageKey('${keyData.id}')" disabled>
+                            📋 Copy
+                        </button>
+                    </div>
             `;
 
             if (keyData.status === 'error') {
@@ -1132,6 +1159,116 @@
    • Contact OpenAI support for Usage API access
 
 Note: Even with proper keys, Usage API access is rare and requires special permission from OpenAI.`);
+        }
+
+        // Key visibility and copy functions
+        let visibleKeys = new Set(); // Track which keys are currently visible
+        let visibleUsageKeys = new Set(); // Track which usage keys are currently visible
+
+        function toggleKeyVisibility(keyId, maskedKey) {
+            const displayElement = document.getElementById(`key-display-${keyId}`);
+            const toggleBtn = displayElement.nextElementSibling;
+            const copyBtn = document.getElementById(`copy-btn-${keyId}`);
+            
+            if (visibleKeys.has(keyId)) {
+                // Hide the key
+                displayElement.textContent = maskedKey;
+                toggleBtn.textContent = '👁️ Show';
+                copyBtn.disabled = true;
+                visibleKeys.delete(keyId);
+            } else {
+                // Show the key - need to fetch the full key
+                showFullKey(keyId, displayElement, toggleBtn, copyBtn, 'key');
+            }
+        }
+
+        function toggleUsageKeyVisibility(keyId, maskedKey) {
+            const displayElement = document.getElementById(`usage-key-display-${keyId}`);
+            const toggleBtn = displayElement.nextElementSibling;
+            const copyBtn = document.getElementById(`usage-copy-btn-${keyId}`);
+            
+            if (visibleUsageKeys.has(keyId)) {
+                // Hide the key
+                displayElement.textContent = maskedKey;
+                toggleBtn.textContent = '👁️ Show';
+                copyBtn.disabled = true;
+                visibleUsageKeys.delete(keyId);
+            } else {
+                // Show the key - need to fetch the full key
+                showFullKey(keyId, displayElement, toggleBtn, copyBtn, 'usage');
+            }
+        }
+
+        async function showFullKey(keyId, displayElement, toggleBtn, copyBtn, type) {
+            try {
+                // Find the full key from our apiKeys data
+                const key = apiKeys.find(k => k.id === keyId);
+                if (!key) {
+                    alert('Key not found');
+                    return;
+                }
+                
+                // We don't have the full key in the frontend, so we need to fetch it
+                const response = await fetch(`/api/keys/${keyId}/full`, {
+                    method: 'GET'
+                });
+                
+                if (!response.ok) {
+                    alert('Failed to fetch full key');
+                    return;
+                }
+                
+                const data = await response.json();
+                displayElement.textContent = data.full_key;
+                displayElement.setAttribute('data-full-key', data.full_key);
+                toggleBtn.textContent = '🙈 Hide';
+                copyBtn.disabled = false;
+                
+                if (type === 'key') {
+                    visibleKeys.add(keyId);
+                } else {
+                    visibleUsageKeys.add(keyId);
+                }
+                
+            } catch (error) {
+                alert('Error fetching key: ' + error.message);
+            }
+        }
+
+        function copyKey(keyId) {
+            const displayElement = document.getElementById(`key-display-${keyId}`);
+            const fullKey = displayElement.getAttribute('data-full-key');
+            
+            if (fullKey) {
+                navigator.clipboard.writeText(fullKey).then(() => {
+                    const copyBtn = document.getElementById(`copy-btn-${keyId}`);
+                    const originalText = copyBtn.textContent;
+                    copyBtn.textContent = '✅ Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                    }, 2000);
+                }).catch(() => {
+                    alert('Failed to copy to clipboard');
+                });
+            }
+        }
+
+        function copyUsageKey(keyId) {
+            const displayElement = document.getElementById(`usage-key-display-${keyId}`);
+            const fullKey = displayElement.getAttribute('data-full-key');
+            
+            if (fullKey) {
+                navigator.clipboard.writeText(fullKey).then(() => {
+                    const copyBtn = document.getElementById(`usage-copy-btn-${keyId}`);
+                    const originalText = copyBtn.textContent;
+                    copyBtn.textContent = '✅ Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                    }, 2000);
+                }).catch(() => {
+                    alert('Failed to copy to clipboard');
+                });
+            }
         }
     </script>
 </body>
