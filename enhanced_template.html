@@ -189,17 +189,17 @@
             <form id="accountForm">
                 <div class="form-group">
                     <label for="accountEmail">Email Address *</label>
-                    <input type="email" id="accountEmail" placeholder="e.g., adam@shatzkamer.com" required>
+                    <input type="email" id="accountEmail" placeholder="e.g., user@company.com" required>
                     <div class="form-error" id="accountEmailError"></div>
                 </div>
                 <div class="form-group">
                     <label for="accountName">Name</label>
-                    <input type="text" id="accountName" placeholder="e.g., Adam Shatzkamer">
+                    <input type="text" id="accountName" placeholder="e.g., John Smith">
                     <div class="form-error" id="accountNameError"></div>
                 </div>
                 <div class="form-group">
                     <label for="organizationName">Organization</label>
-                    <input type="text" id="organizationName" placeholder="e.g., AstraMedia">
+                    <input type="text" id="organizationName" placeholder="e.g., My Company">
                     <div class="form-error" id="organizationError"></div>
                 </div>
                 <div class="modal-actions">
@@ -1113,6 +1113,26 @@
                 loadApiKeys();
             });
         });
+
+        // Help function for key issues
+        function showKeyHelp() {
+            alert(`🔧 How to Fix API Key Permission Issues:
+
+1. Go to https://platform.openai.com/api-keys
+2. Create a new API key with these settings:
+   • Permissions: "All" (not restricted)
+   • Scope: "All endpoints" 
+   • Owner/Admin role in your organization
+
+3. Replace your current keys with the new unrestricted ones
+
+4. If you still get permission errors:
+   • Check your OpenAI billing is active
+   • Verify you're an Owner/Admin in your org
+   • Contact OpenAI support for Usage API access
+
+Note: Even with proper keys, Usage API access is rare and requires special permission from OpenAI.`);
+        }
     </script>
 </body>
 </html>
