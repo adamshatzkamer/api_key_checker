@@ -918,86 +918,114 @@ def test_key_endpoint(key_id):
 
 @app.route('/api/usage')
 def get_usage():
-    """API endpoint to fetch usage data only for admin keys, with associated project keys shown as inventory"""
+    """API endpoint to fetch usage data from all API keys across providers"""
     days = request.args.get('days', 30, type=int)
     
     results = {}
     all_keys = get_all_keys()
     
-    # Group keys by account and separate admin from project keys
-    admin_keys = [key for key in all_keys if key['key_type'] == 'admin']
-    project_keys = [key for key in all_keys if key['key_type'] == 'project']
+    print(f"Found {len(all_keys)} total keys")
     
-    print(f"Found {len(admin_keys)} admin keys and {len(project_keys)} project keys")
-    print("Admin keys:", [key['name'] for key in admin_keys])
-    print("Project keys:", [key['name'] for key in project_keys])
+    # Group keys by provider for better organization
+    keys_by_provider = {}
+    for key in all_keys:
+        provider = key.get('provider', 'unknown')
+        if provider not in keys_by_provider:
+            keys_by_provider[provider] = []
+        keys_by_provider[provider].append(key)
     
-    # Process ONLY admin keys - fetch actual usage data
-    for admin_key in admin_keys:
-        print(f"Fetching usage for admin key: {admin_key['name']} - Account: {admin_key['account_email']}")
+    print(f"Keys by provider: {[(p, len(keys)) for p, keys in keys_by_provider.items()]}")
+    
+    # Process keys based on provider and strategy
+    for key in all_keys:
+        provider = key.get('provider', 'unknown')
+        key_type = key.get('key_type', 'unknown')
         
-        # Fetch usage data for admin key
-        usage_data = fetch_api_usage(admin_key['full_key'], days)
+        print(f"Processing key: {key['name']} ({provider} - {key_type}) - Account: {key['account_email']}")
         
-        # Find associated project keys for this admin key
-        associated_projects = [
-            {
-                'id': str(proj['id']),
-                'name': proj['name'],
-                'key': proj['masked_key']
+        # Determine processing strategy based on provider and key type
+        should_fetch_usage = False
+        usage_strategy = "not tested"
+        
+        if provider == 'openai':
+            # For OpenAI: Only fetch usage for admin keys, show project keys as associated
+            if key_type == 'admin':
+                should_fetch_usage = True
+                usage_strategy = "admin key direct access"
+            else:
+                # Check if this project key has an admin key association
+                if key['admin_key_id']:
+                    # Skip individual processing - will be shown under admin key
+                    print(f"  Skipping {key['name']} - will show under admin key")
+                    continue
+                else:
+                    # Orphaned project key - show as info only
+                    should_fetch_usage = False
+                    usage_strategy = "orphaned project key (info only)"
+        
+        elif provider in ['anthropic', 'brave']:
+            # For Anthropic/Brave: Test all keys since they don't have admin/project hierarchy
+            should_fetch_usage = True
+            usage_strategy = f"{provider} key direct access"
+        
+        else:
+            # Unknown provider - show as info only
+            should_fetch_usage = False
+            usage_strategy = "unsupported provider"
+        
+        if should_fetch_usage:
+            print(f"  Fetching usage data for {key['name']}")
+            # Fetch usage data
+            usage_data = fetch_api_usage(key['full_key'], days)
+        else:
+            print(f"  Showing {key['name']} as info only")
+            # Create info-only entry
+            usage_data = {
+                'status': 'info_only',
+                'message': f'Key not tested - {usage_strategy}',
+                'note': 'This key is shown for inventory purposes only.'
             }
-            for proj in project_keys 
-            if proj['admin_key_id'] == admin_key['id']
-        ]
+        
+        # For OpenAI admin keys, find associated project keys
+        associated_projects = []
+        if provider == 'openai' and key_type == 'admin':
+            associated_projects = [
+                {
+                    'id': str(proj['id']),
+                    'name': proj['name'],
+                    'key': proj['masked_key'],
+                    'provider': proj.get('provider', 'openai')
+                }
+                for proj in all_keys 
+                if proj['admin_key_id'] == key['id']
+            ]
+            print(f"  Found {len(associated_projects)} associated project keys")
         
         # Add metadata
-        usage_data['usage_key_source'] = 'admin key direct access'
+        usage_data['usage_key_source'] = usage_strategy
         usage_data['associated_project_keys'] = associated_projects
         usage_data['project_key_count'] = len(associated_projects)
+        usage_data['provider'] = provider
         
-        # Combine admin key info with usage data - use unique key for results
-        unique_key_name = f"{admin_key['name']} - {admin_key['account_email']}"
+        # Combine key info with usage data - use unique key for results
+        unique_key_name = f"{key['name']} - {key['account_email']} ({provider})"
         results[unique_key_name] = {
-            'id': str(admin_key['id']),
-            'name': admin_key['name'],
-            'key': admin_key['masked_key'],
-            'key_type': admin_key['key_type'],
-            'account_email': admin_key['account_email'],
-            'account_name': admin_key['account_name'],
-            'organization_name': admin_key['organization_name'],
-            'admin_name': None,  # This IS the admin key
+            'id': str(key['id']),
+            'name': key['name'],
+            'key': key['masked_key'],
+            'key_type': key_type,
+            'provider': provider,
+            'account_email': key['account_email'],
+            'account_name': key['account_name'],
+            'organization_name': key['organization_name'],
+            'admin_name': key.get('admin_name'),
             **usage_data
         }
         
         # Add small delay to avoid rate limiting
-        time.sleep(0.5)
+        time.sleep(0.3)
     
-    # ONLY include orphaned project keys (no admin key association) as info items
-    orphaned_projects = [key for key in project_keys if not key['admin_key_id']]
-    
-    for orphaned_key in orphaned_projects:
-        print(f"Adding orphaned project key as info: {orphaned_key['name']} - Account: {orphaned_key['account_email']}")
-        
-        # Don't test orphaned keys - just show them as informational
-        unique_orphan_name = f"{orphaned_key['name']} - {orphaned_key['account_email']}"
-        results[unique_orphan_name] = {
-            'id': str(orphaned_key['id']),
-            'name': orphaned_key['name'],
-            'key': orphaned_key['masked_key'],
-            'key_type': orphaned_key['key_type'],
-            'account_email': orphaned_key['account_email'],
-            'account_name': orphaned_key['account_name'],
-            'organization_name': orphaned_key['organization_name'],
-            'admin_name': None,
-            'status': 'info_only',
-            'message': 'Project key without admin association - not tested for usage data',
-            'usage_key_source': 'orphaned project key (info only)',
-            'associated_project_keys': [],
-            'project_key_count': 0,
-            'note': 'This project key is not being tested. Link it to an admin key to include its usage data under that admin key.'
-        }
-    
-    print(f"Processed {len(admin_keys)} admin keys and {len(orphaned_projects)} orphaned project keys (info only)")
+    print(f"Processed {len(results)} keys total")
     return jsonify(results)
 
 @app.route('/api/debug')

@@ -33,7 +33,7 @@
         .account-details { font-size: 12px; color: #6b7280; margin-top: 4px; }
         .account-actions { display: flex; gap: 8px; }
         
-        /* Key Management Enhanced */
+        /* Key Management */
         .key-management { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 30px; }
         .key-management h3 { color: #1f2937; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
         .key-list { display: grid; gap: 10px; margin-bottom: 20px; }
@@ -122,7 +122,6 @@
         .summary-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 12px; text-align: center; }
         .summary-card h3 { font-size: 2rem; margin-bottom: 5px; }
         .summary-card p { opacity: 0.9; font-size: 1.1rem; }
-        .key-masking { font-family: monospace; font-size: 14px; background: #f1f5f9; padding: 8px; border-radius: 4px; border: 1px solid #e2e8f0; }
         .key-display-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
         .key-display-text { font-family: monospace; font-size: 12px; background: #f1f5f9; padding: 6px 8px; border-radius: 4px; border: 1px solid #e2e8f0; flex: 1; }
         .key-toggle-btn { background: #6b7280; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; transition: background 0.2s; }
@@ -135,8 +134,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔧 OpenAI API Usage Dashboard</h1>
-            <p>Real-time monitoring of usage, costs, and limits across multiple API keys and accounts</p>
+            <h1>🔧 API Usage Dashboard</h1>
+            <p>Real-time monitoring of usage, costs, and limits across multiple API providers</p>
         </div>
         
         <div class="dashboard">
@@ -285,19 +284,12 @@
 
         // Tab Management
         function switchTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
             
-            // Show selected tab
             document.getElementById(`${tabName}-tab`).classList.add('active');
             event.target.classList.add('active');
             
-            // Load data if needed
             if (tabName === 'accounts') {
                 loadAccounts();
             } else if (tabName === 'keys') {
@@ -383,18 +375,16 @@
         }
 
         async function deleteAccount(accountId, email) {
-            if (!confirm(`Are you sure you want to delete account "${email}" and all associated API keys? This action cannot be undone.`)) {
+            if (!confirm(`Are you sure you want to delete account "${email}" and all associated API keys?`)) {
                 return;
             }
             
             try {
-                const response = await fetch(`/api/accounts/${accountId}`, {
-                    method: 'DELETE'
-                });
+                const response = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
                 
                 if (response.ok) {
                     await loadAccounts();
-                    await loadApiKeys(); // Refresh keys since they might be deleted
+                    await loadApiKeys();
                 } else {
                     const error = await response.json();
                     alert(`Failed to delete account: ${error.error}`);
@@ -441,16 +431,14 @@
                 
                 const response = await fetch(url, {
                     method: method,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 
                 if (response.ok) {
                     closeAccountModal();
                     await loadAccounts();
-                    await loadApiKeys(); // Refresh keys in case account was updated
+                    await loadApiKeys();
                 } else {
                     const error = await response.json();
                     if (error.error.includes('email already exists')) {
@@ -470,7 +458,6 @@
                 const response = await fetch('/api/keys');
                 const keys = await response.json();
                 
-                // Enrich keys with account data
                 apiKeys = keys.map(key => {
                     const account = accounts.find(a => a.id == key.account_id);
                     return {
@@ -583,9 +570,7 @@
             clearKeyErrors();
             hideTestResult();
             
-            // Load accounts into dropdown
             await loadAccountsIntoDropdown();
-            
             document.getElementById('keyModal').classList.add('active');
         }
 
@@ -602,7 +587,6 @@
             clearKeyErrors();
             hideTestResult();
             
-            // Load accounts and admin keys
             await loadAccountsIntoDropdown();
             await loadAdminKeysForAccount(key.account_id);
             
@@ -678,14 +662,12 @@
         });
 
         async function deleteKey(keyId, keyName) {
-            if (!confirm(`Are you sure you want to delete "${keyName}"? This action cannot be undone.`)) {
+            if (!confirm(`Are you sure you want to delete "${keyName}"?`)) {
                 return;
             }
             
             try {
-                const response = await fetch(`/api/keys/${keyId}`, {
-                    method: 'DELETE'
-                });
+                const response = await fetch(`/api/keys/${keyId}`, { method: 'DELETE' });
                 
                 if (response.ok) {
                     await loadApiKeys();
@@ -703,10 +685,7 @@
 
         async function testSingleKey(keyId) {
             try {
-                const response = await fetch(`/api/keys/${keyId}/test`, {
-                    method: 'POST'
-                });
-                
+                const response = await fetch(`/api/keys/${keyId}/test`, { method: 'POST' });
                 const result = await response.json();
                 
                 if (result.status === 'success') {
@@ -733,8 +712,8 @@
                 return;
             }
             
-            if (!keyValue.startsWith('sk-')) {
-                showKeyError('keyValueError', 'Invalid OpenAI API key format - must start with sk-');
+            if (!keyValue.match(/^(sk-|BSA)/)) {
+                showKeyError('keyValueError', 'Invalid API key format');
                 return;
             }
             
@@ -746,9 +725,7 @@
             try {
                 const tempResponse = await fetch('/api/keys', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         name: `temp_test_${Date.now()}`,
                         full_key: keyValue,
@@ -762,17 +739,11 @@
                 }
                 
                 const tempKey = await tempResponse.json();
-                
-                const testResponse = await fetch(`/api/keys/${tempKey.id}/test`, {
-                    method: 'POST'
-                });
-                
+                const testResponse = await fetch(`/api/keys/${tempKey.id}/test`, { method: 'POST' });
                 const result = await testResponse.json();
                 
                 // Clean up temp key
-                await fetch(`/api/keys/${tempKey.id}`, {
-                    method: 'DELETE'
-                });
+                await fetch(`/api/keys/${tempKey.id}`, { method: 'DELETE' });
                 
                 if (result.status === 'success') {
                     testResult.className = 'test-result success';
@@ -834,7 +805,7 @@
             }
             
             if (keyValue && !keyValue.match(/^(sk-|BSA)/)) {
-                showKeyError('keyValueError', 'Invalid API key format - must start with sk- (OpenAI/Anthropic) or BSA (Brave)');
+                showKeyError('keyValueError', 'Invalid API key format');
                 return;
             }
             
@@ -853,9 +824,7 @@
                 
                 const response = await fetch(url, {
                     method: method,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 
@@ -917,7 +886,7 @@
             document.getElementById('apiKeysSection').innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
-                    <p>Fetching real usage data from OpenAI API...</p>
+                    <p>Fetching usage data from API providers...</p>
                 </div>
             `;
 
@@ -951,23 +920,35 @@
             let totalActiveKeys = 0;
             let totalCost = 0;
             let totalTokens = 0;
-            let errorCount = 0;
+            let providerCounts = {};
 
             Object.values(usageData).forEach(keyData => {
+                const provider = keyData.provider || 'unknown';
+                
+                if (!providerCounts[provider]) {
+                    providerCounts[provider] = 0;
+                }
+                providerCounts[provider]++;
+                
                 if (keyData.status === 'success') {
                     totalActiveKeys++;
-                    if (keyData.costs && keyData.costs.data) {
-                        const dailyCosts = keyData.costs.data;
-                        totalCost += dailyCosts.reduce((sum, day) => sum + (day.cost || 0), 0);
+                    
+                    if (provider === 'openai') {
+                        if (keyData.costs && keyData.costs.data) {
+                            const dailyCosts = keyData.costs.data;
+                            totalCost += dailyCosts.reduce((sum, day) => sum + (day.cost || 0), 0);
+                        }
+                        if (keyData.usage && keyData.usage.data) {
+                            const dailyUsage = keyData.usage.data;
+                            totalTokens += dailyUsage.reduce((sum, day) => sum + (day.n_requests || 0), 0);
+                        }
                     }
-                    if (keyData.usage && keyData.usage.data) {
-                        const dailyUsage = keyData.usage.data;
-                        totalTokens += dailyUsage.reduce((sum, day) => sum + (day.n_requests || 0), 0);
-                    }
-                } else {
-                    errorCount++;
                 }
             });
+
+            const providerBreakdown = Object.entries(providerCounts)
+                .map(([provider, count]) => `${provider.toUpperCase()}: ${count}`)
+                .join(' • ');
 
             summarySection.innerHTML = `
                 <div class="summary-cards">
@@ -977,15 +958,15 @@
                     </div>
                     <div class="summary-card">
                         <h3>${totalCost.toFixed(2)}</h3>
-                        <p>Total Spend</p>
+                        <p>OpenAI Spend</p>
                     </div>
                     <div class="summary-card">
                         <h3>${totalTokens.toLocaleString()}</h3>
-                        <p>Total Requests</p>
+                        <p>OpenAI Requests</p>
                     </div>
                     <div class="summary-card">
-                        <h3>${errorCount}</h3>
-                        <p>Key Errors</p>
+                        <h3>${Object.keys(providerCounts).length}</h3>
+                        <p>Providers: ${providerBreakdown}</p>
                     </div>
                 </div>
             `;
@@ -1007,16 +988,22 @@
                 'success': { class: 'status-active', text: 'Active' },
                 'error': { class: 'status-error', text: 'Error' },
                 'partial': { class: 'status-partial', text: 'Partial' },
-                'basic_only': { class: 'status-basic', text: 'Basic Only' }
+                'basic_only': { class: 'status-basic', text: 'Basic Only' },
+                'info_only': { class: 'status-info', text: 'Info Only' },
+                'no_usage_access': { class: 'status-no-usage', text: 'No Usage Access' }
             };
             
             const status = statusMap[keyData.status] || { class: 'status-error', text: 'Unknown' };
+            const provider = keyData.provider || 'unknown';
+            const providerBadge = `<span class="provider-badge provider-${provider}">${provider.toUpperCase()}</span>`;
             
             let html = `
                 <div class="api-key-item">
                     <div class="api-key-header">
                         <div style="flex: 1;">
-                            <div class="api-key-name">${keyData.name}</div>
+                            <div class="api-key-name">
+                                ${keyData.name} ${providerBadge}
+                            </div>
                             <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
                                 ${keyData.account_email ? `📧 ${keyData.account_email}` : ''}
                                 ${keyData.key_type ? `• ${keyData.key_type.toUpperCase()} key` : ''}
@@ -1038,29 +1025,46 @@
                     </div>
             `;
 
+            // Handle different status types
             if (keyData.status === 'error') {
-                const errorDetails = keyData.error_details;
+                const errorDetails = keyData.error_details || keyData.usage_error?.error_details || keyData.costs_error?.error_details;
+                if (errorDetails) {
+                    html += `
+                        <div class="error-details">
+                            <div class="error-title">
+                                ${errorDetails.icon} ${errorDetails.title}
+                            </div>
+                            <div class="error-description">
+                                ${errorDetails.description}
+                            </div>
+                            <div class="error-solutions">
+                                <h5>How to fix this:</h5>
+                                <ul>
+                                    ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                const errorMessage = keyData.error || keyData.usage_error?.error || keyData.costs_error?.error || 'Unknown error';
                 html += `
-                    <div class="error-details">
-                        <div class="error-title">
-                            ${errorDetails.icon} ${errorDetails.title}
-                        </div>
-                        <div class="error-description">
-                            ${errorDetails.description}
-                        </div>
-                        <div class="error-solutions">
-                            <h5>How to fix this:</h5>
-                            <ul>
-                                ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
-                            </ul>
-                        </div>
-                    </div>
-                    
                     <div class="error-message">
-                        <strong>Technical Details:</strong> ${keyData.error}
+                        <strong>Technical Details:</strong> ${errorMessage}
                     </div>
                 `;
-            } else {
+                
+            } else if (keyData.status === 'info_only') {
+                html += `
+                    <div style="background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; padding: 15px; margin-top: 10px;">
+                        <div style="color: #374151; font-weight: 600; margin-bottom: 8px;">
+                            ℹ️ ${keyData.message || 'Key shown for reference only'}
+                        </div>
+                        ${keyData.note ? `<div style="color: #6b7280; font-size: 13px;">${keyData.note}</div>` : ''}
+                    </div>
+                `;
+                
+            } else if (keyData.status === 'success' && provider === 'openai') {
                 let totalCost = 0;
                 let totalRequests = 0;
                 let totalTokens = 0;
@@ -1099,47 +1103,97 @@
                         </div>
                     </div>
                 `;
-
-                // Show usage/costs errors if present
-                if (keyData.usage_error) {
-                    const errorDetails = keyData.usage_error.error_details;
+                
+            } else if (keyData.status === 'success' && (provider === 'anthropic' || provider === 'brave')) {
+                html += `
+                    <div class="usage-grid">
+                        <div class="usage-card">
+                            <h4>API Status</h4>
+                            <div class="value">✅ Valid</div>
+                            <div class="subtext">Key is working properly</div>
+                        </div>
+                        <div class="usage-card">
+                            <h4>Provider</h4>
+                            <div class="value">${provider.charAt(0).toUpperCase() + provider.slice(1)}</div>
+                            <div class="subtext">API provider</div>
+                        </div>
+                        <div class="usage-card">
+                            <h4>Usage Data</h4>
+                            <div class="value">N/A</div>
+                            <div class="subtext">${provider === 'anthropic' ? 'No public usage API' : 'Limited usage data'}</div>
+                        </div>
+                        <div class="usage-card">
+                            <h4>Last Tested</h4>
+                            <div class="value">Now</div>
+                            <div class="subtext">Key validation passed</div>
+                        </div>
+                    </div>
+                `;
+                
+                if (keyData.message) {
                     html += `
-                        <div class="error-details" style="margin-top: 15px;">
-                            <div class="error-title">
-                                ${errorDetails.icon} Usage API: ${errorDetails.title}
-                            </div>
-                            <div class="error-description">
-                                ${errorDetails.description}
-                            </div>
-                            <div class="error-solutions">
-                                <h5>How to fix this:</h5>
-                                <ul>
-                                    ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
-                                </ul>
-                            </div>
+                        <div style="background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin-top: 15px; color: #166534;">
+                            ✅ ${keyData.message}
                         </div>
                     `;
                 }
+            }
 
-                if (keyData.costs_error) {
-                    const errorDetails = keyData.costs_error.error_details;
-                    html += `
-                        <div class="error-details" style="margin-top: 15px;">
-                            <div class="error-title">
-                                ${errorDetails.icon} Costs API: ${errorDetails.title}
-                            </div>
-                            <div class="error-description">
-                                ${errorDetails.description}
-                            </div>
-                            <div class="error-solutions">
-                                <h5>How to fix this:</h5>
-                                <ul>
-                                    ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
-                                </ul>
-                            </div>
+            // Show usage/costs errors if present
+            if (keyData.usage_error && keyData.usage_error.error_details) {
+                const errorDetails = keyData.usage_error.error_details;
+                html += `
+                    <div class="error-details" style="margin-top: 15px;">
+                        <div class="error-title">
+                            ${errorDetails.icon} Usage API: ${errorDetails.title}
                         </div>
-                    `;
-                }
+                        <div class="error-description">
+                            ${errorDetails.description}
+                        </div>
+                        <div class="error-solutions">
+                            <h5>How to fix this:</h5>
+                            <ul>
+                                ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (keyData.costs_error && keyData.costs_error.error_details) {
+                const errorDetails = keyData.costs_error.error_details;
+                html += `
+                    <div class="error-details" style="margin-top: 15px;">
+                        <div class="error-title">
+                            ${errorDetails.icon} Costs API: ${errorDetails.title}
+                        </div>
+                        <div class="error-description">
+                            ${errorDetails.description}
+                        </div>
+                        <div class="error-solutions">
+                            <h5>How to fix this:</h5>
+                            <ul>
+                                ${errorDetails.solutions.map(solution => `<li>${solution}</li>`).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Show associated project keys for OpenAI admin keys
+            if (keyData.associated_project_keys && keyData.associated_project_keys.length > 0) {
+                html += `
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 15px; margin-top: 15px;">
+                        <h5 style="color: #374151; margin-bottom: 10px;">🔗 Associated Project Keys (${keyData.associated_project_keys.length})</h5>
+                        <div style="display: grid; gap: 8px;">
+                            ${keyData.associated_project_keys.map(proj => `
+                                <div style="background: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #6b7280;">
+                                    ${proj.name} • ${proj.key}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
             }
 
             html += `</div>`;
@@ -1153,29 +1207,9 @@
             });
         });
 
-        // Help function for key issues
-        function showKeyHelp() {
-            alert(`🔧 How to Fix API Key Permission Issues:
-
-1. Go to https://platform.openai.com/api-keys
-2. Create a new API key with these settings:
-   • Permissions: "All" (not restricted)
-   • Scope: "All endpoints" 
-   • Owner/Admin role in your organization
-
-3. Replace your current keys with the new unrestricted ones
-
-4. If you still get permission errors:
-   • Check your OpenAI billing is active
-   • Verify you're an Owner/Admin in your org
-   • Contact OpenAI support for Usage API access
-
-Note: Even with proper keys, Usage API access is rare and requires special permission from OpenAI.`);
-        }
-
         // Key visibility and copy functions
-        let visibleKeys = new Set(); // Track which keys are currently visible
-        let visibleUsageKeys = new Set(); // Track which usage keys are currently visible
+        let visibleKeys = new Set();
+        let visibleUsageKeys = new Set();
 
         function toggleKeyVisibility(keyId, maskedKey) {
             const displayElement = document.getElementById(`key-display-${keyId}`);
@@ -1183,13 +1217,11 @@ Note: Even with proper keys, Usage API access is rare and requires special permi
             const copyBtn = document.getElementById(`copy-btn-${keyId}`);
             
             if (visibleKeys.has(keyId)) {
-                // Hide the key
                 displayElement.textContent = maskedKey;
                 toggleBtn.textContent = '👁️ Show';
                 copyBtn.disabled = true;
                 visibleKeys.delete(keyId);
             } else {
-                // Show the key - need to fetch the full key
                 showFullKey(keyId, displayElement, toggleBtn, copyBtn, 'key');
             }
         }
@@ -1200,30 +1232,18 @@ Note: Even with proper keys, Usage API access is rare and requires special permi
             const copyBtn = document.getElementById(`usage-copy-btn-${keyId}`);
             
             if (visibleUsageKeys.has(keyId)) {
-                // Hide the key
                 displayElement.textContent = maskedKey;
                 toggleBtn.textContent = '👁️ Show';
                 copyBtn.disabled = true;
                 visibleUsageKeys.delete(keyId);
             } else {
-                // Show the key - need to fetch the full key
                 showFullKey(keyId, displayElement, toggleBtn, copyBtn, 'usage');
             }
         }
 
         async function showFullKey(keyId, displayElement, toggleBtn, copyBtn, type) {
             try {
-                // Find the full key from our apiKeys data
-                const key = apiKeys.find(k => k.id === keyId);
-                if (!key) {
-                    alert('Key not found');
-                    return;
-                }
-                
-                // We don't have the full key in the frontend, so we need to fetch it
-                const response = await fetch(`/api/keys/${keyId}/full`, {
-                    method: 'GET'
-                });
+                const response = await fetch(`/api/keys/${keyId}/full`);
                 
                 if (!response.ok) {
                     alert('Failed to fetch full key');
