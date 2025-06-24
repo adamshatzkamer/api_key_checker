@@ -6,3 +6,6 @@ backup.api_keys copy.db
 *copy.db
 .backup.api_keys.db
 backup.api_keys.db
+__pycache__/
+*.pyc
+*.pyo
