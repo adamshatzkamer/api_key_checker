@@ -327,12 +327,13 @@ def get_error_details(error_message, status_code):
     })
 
 def fetch_openai_usage(api_key, days=30):
-    """Fetch usage data from OpenAI's Usage API with graceful fallback"""
+    """Fetch usage data from OpenAI's Usage API with improved request handling"""
     start_time = int(time.time()) - (days * 24 * 60 * 60)
     
     headers = {
         'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'User-Agent': 'OpenAI-Dashboard/1.0'
     }
     
     result = {}
@@ -343,10 +344,13 @@ def fetch_openai_usage(api_key, days=30):
         models_response = requests.get(
             'https://api.openai.com/v1/models',
             headers=headers,
-            timeout=10
+            timeout=30,  # Increased timeout
+            verify=True  # Ensure SSL verification
         )
         
+        print(f"Models API response: {models_response.status_code}")
         if models_response.status_code != 200:
+            print(f"Models API error: {models_response.text}")
             result['error'] = f"Basic API test failed: {models_response.status_code} - {models_response.text}"
             result['error_details'] = get_error_details(models_response.text, models_response.status_code)
             result['status'] = 'error'
@@ -357,12 +361,13 @@ def fetch_openai_usage(api_key, days=30):
         result['models_accessible'] = True
         
     except requests.exceptions.RequestException as e:
+        print(f"Models API network error: {str(e)}")
         result['error'] = f"Network error during basic test: {str(e)}"
         result['error_details'] = get_error_details(str(e), None)
         result['status'] = 'error'
         return result
     
-    # Try Usage API (expect this to fail for most keys)
+    # Try Usage API with the same format as successful curl
     usage_params = {
         'start_time': start_time,
         'bucket_width': '1d',
@@ -370,34 +375,38 @@ def fetch_openai_usage(api_key, days=30):
     }
     
     try:
-        print(f"Testing Usage API access (this often fails)...")
+        print(f"Testing Usage API access...")
         usage_response = requests.get(
             'https://api.openai.com/v1/organization/usage/completions',
             headers=headers,
             params=usage_params,
-            timeout=10
+            timeout=30,  # Increased timeout
+            verify=True
         )
         
+        print(f"Usage API response: {usage_response.status_code}")
         if usage_response.status_code == 200:
-            print(f"✓ Usage API access works (rare!)")
-            result['usage'] = usage_response.json()
+            print(f"✓ Usage API access works!")
+            usage_json = usage_response.json()
+            print(f"Usage data: {len(usage_json.get('data', []))} buckets")
+            result['usage'] = usage_json
             result['status'] = 'success'
         else:
-            print(f"✗ Usage API failed: {usage_response.status_code} (this is normal)")
+            print(f"✗ Usage API failed: {usage_response.status_code}")
+            print(f"Usage API error response: {usage_response.text}")
             result['usage_error'] = {
                 'error': f"Usage API failed: {usage_response.status_code} - {usage_response.text}",
                 'error_details': get_error_details(usage_response.text, usage_response.status_code)
             }
-            # Don't set status to partial yet - continue testing
             
     except requests.exceptions.RequestException as e:
-        print(f"✗ Usage API network error (normal): {str(e)}")
+        print(f"✗ Usage API network error: {str(e)}")
         result['usage_error'] = {
             'error': f"Usage API network error: {str(e)}",
             'error_details': get_error_details(str(e), None)
         }
     
-    # Try Costs API (also expect this to fail)
+    # Try Costs API
     costs_params = {
         'start_time': start_time,
         'bucket_width': '1d',
@@ -405,28 +414,32 @@ def fetch_openai_usage(api_key, days=30):
     }
     
     try:
-        print(f"Testing Costs API access (this often fails)...")
+        print(f"Testing Costs API access...")
         costs_response = requests.get(
             'https://api.openai.com/v1/organization/costs',
             headers=headers,
             params=costs_params,
-            timeout=10
+            timeout=30,
+            verify=True
         )
         
+        print(f"Costs API response: {costs_response.status_code}")
         if costs_response.status_code == 200:
-            print(f"✓ Costs API access works (rare!)")
-            result['costs'] = costs_response.json()
+            print(f"✓ Costs API access works!")
+            costs_json = costs_response.json()
+            result['costs'] = costs_json
             if result.get('status') != 'success':
-                result['status'] = 'partial'  # Has costs but maybe not usage
+                result['status'] = 'partial'
         else:
-            print(f"✗ Costs API failed: {costs_response.status_code} (this is normal)")
+            print(f"✗ Costs API failed: {costs_response.status_code}")
+            print(f"Costs API error response: {costs_response.text}")
             result['costs_error'] = {
                 'error': f"Costs API failed: {costs_response.status_code} - {costs_response.text}",
                 'error_details': get_error_details(costs_response.text, costs_response.status_code)
             }
             
     except requests.exceptions.RequestException as e:
-        print(f"✗ Costs API network error (normal): {str(e)}")
+        print(f"✗ Costs API network error: {str(e)}")
         result['costs_error'] = {
             'error': f"Costs API network error: {str(e)}",
             'error_details': get_error_details(str(e), None)
@@ -439,7 +452,7 @@ def fetch_openai_usage(api_key, days=30):
                 result['status'] = 'partial'
             else:
                 result['status'] = 'basic_only'
-                result['message'] = "API key works for basic calls but not Usage/Costs APIs (this is normal)"
+                result['message'] = "API key works for basic calls but not Usage/Costs APIs"
         else:
             result['status'] = 'error'
     
