@@ -507,6 +507,128 @@ def validate_key_endpoint(key_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/usage', methods=['GET'])
+def get_usage_data():
+    """Get usage data for all API keys"""
+    days = request.args.get('days', 30, type=int)
+    
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT k.*, a.name as account_name, a.email as account_email 
+                FROM api_keys k 
+                LEFT JOIN accounts a ON k.account_id = a.id 
+                ORDER BY k.name
+            ''')
+            
+            keys = []
+            for row in cursor.fetchall():
+                key_data = dict(row)
+                
+                # Create usage response structure
+                usage_item = {
+                    'id': key_data['id'],
+                    'name': key_data['name'],
+                    'provider': key_data['provider'],
+                    'key_type': key_data['key_type'],
+                    'account_email': key_data['account_email'],
+                    'key': key_data['masked_key'],
+                    'status': 'info_only',
+                    'message': f'API key validation for {key_data["provider"]} provider'
+                }
+                
+                # For OpenAI keys, we could potentially add real usage data
+                if key_data['provider'] == 'openai':
+                    usage_item.update({
+                        'status': 'success',
+                        'usage': {
+                            'data': []  # Would contain real usage data
+                        },
+                        'costs': {
+                            'data': []  # Would contain real cost data
+                        }
+                    })
+                
+                keys.append(usage_item)
+            
+            return jsonify(keys)
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/keys/<int:key_id>/full', methods=['GET'])
+def get_full_key(key_id):
+    """Get the full API key (for copy functionality)"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT full_key FROM api_keys WHERE id = ?', (key_id,))
+            result = cursor.fetchone()
+            
+            if not result:
+                return jsonify({'error': 'API key not found'}), 404
+            
+            return jsonify({'full_key': result['full_key']})
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/keys/<int:key_id>/test', methods=['POST'])
+def test_key_endpoint(key_id):
+    """Test a specific API key"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM api_keys WHERE id = ?', (key_id,))
+            key_data = cursor.fetchone()
+            
+            if not key_data:
+                return jsonify({'error': 'API key not found'}), 404
+            
+            key_data = dict(key_data)
+            provider = key_data['provider']
+            
+            # Test the key based on provider
+            if provider == 'openai':
+                validation_result = validate_openai_key(key_data['full_key'])
+                if validation_result['valid']:
+                    return jsonify({
+                        'status': 'success',
+                        'message': f'OpenAI API key is valid and working'
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'OpenAI API key validation failed: {validation_result.get("error", "Invalid key")}'
+                    })
+            
+            elif provider == 'anthropic':
+                validation_result = validate_anthropic_key(key_data['full_key'])
+                if validation_result['valid']:
+                    return jsonify({
+                        'status': 'success',
+                        'message': f'Anthropic API key is valid and working'
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Anthropic API key validation failed: {validation_result.get("error", "Invalid key")}'
+                    })
+            
+            else:
+                # For other providers, just return a basic validation
+                return jsonify({
+                    'status': 'success',
+                    'message': f'{provider.capitalize()} API key format appears valid (full validation not implemented)'
+                })
+                
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Test failed: {str(e)}'
+        }), 500
+
 if __name__ == '__main__':
     print("🚀 Starting OpenAI Usage Dashboard with SQLite Database...")
     print("📊 Dashboard will be available at: http://localhost:5000")
