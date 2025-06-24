@@ -1,3 +1,6 @@
 api_keys.db
 .DS_Store
 backup.api_keys copy.db
+*api_keys copy.db
+*.db.bak
+*copy.db
