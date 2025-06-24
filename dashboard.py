@@ -46,18 +46,37 @@ def init_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (account_id) REFERENCES accounts (id),
-                FOREIGN KEY (admin_key_id) REFERENCES api_keys (id),
-                UNIQUE(name, account_id)
+                FOREIGN KEY (admin_key_id) REFERENCES api_keys (id)
             )
         ''')
         
         # Create default account if none exists
-        conn.execute('''
+        cursor = conn.execute('''
             INSERT OR IGNORE INTO accounts (email, name, organization_name) 
             VALUES ('adam@shatzkamer.com', 'Adam Shatzkamer', 'AstraMedia')
         ''')
         
+        # Get the default account ID
+        cursor = conn.execute('SELECT id FROM accounts WHERE email = ?', ('adam@shatzkamer.com',))
+        default_account_id = cursor.fetchone()[0]
+        
+        # Update any keys that don't have an account_id to use the default account
+        cursor = conn.execute('UPDATE api_keys SET account_id = ? WHERE account_id IS NULL', (default_account_id,))
+        updated_keys = cursor.rowcount
+        
+        if updated_keys > 0:
+            print(f"✅ Migrated {updated_keys} existing keys to default account")
+        
         conn.commit()
+        
+        # Print current state for debugging
+        cursor = conn.execute('SELECT COUNT(*) FROM accounts')
+        account_count = cursor.fetchone()[0]
+        
+        cursor = conn.execute('SELECT COUNT(*) FROM api_keys')
+        key_count = cursor.fetchone()[0]
+        
+        print(f"📊 Database state: {account_count} accounts, {key_count} keys")
 
 @contextmanager
 def get_db():
@@ -143,7 +162,14 @@ def get_all_keys():
             LEFT JOIN accounts a ON k.account_id = a.id
             ORDER BY a.email, k.name
         ''')
-        return [dict(row) for row in cursor.fetchall()]
+        
+        keys = [dict(row) for row in cursor.fetchall()]
+        print(f"get_all_keys: Found {len(keys)} keys in database")
+        
+        for key in keys:
+            print(f"  Key: {key['name']} (ID: {key['id']}) - Account: {key['account_email']} - Type: {key['key_type']}")
+        
+        return keys
 
 def get_key_by_id(key_id):
     """Get a single API key by ID with admin association and account info"""
@@ -518,20 +544,31 @@ def get_account_admin_keys(account_id):
 # API Key Management Routes
 @app.route('/api/keys', methods=['GET'])
 def get_keys():
-    """Get all API keys (masked) with admin associations"""
-    keys = get_all_keys()
-    return jsonify([{
-        'id': str(key['id']),
-        'name': key['name'],
-        'key': key['masked_key'],
-        'key_type': key['key_type'],
-        'account_id': key['account_id'],
-        'admin_key_id': key['admin_key_id'],
-        'admin_name': key['admin_name'],
-        'account_email': key['account_email'],
-        'account_name': key['account_name'],
-        'organization_name': key['organization_name']
-    } for key in keys])
+    """Get all API keys (masked) with admin associations and account info"""
+    try:
+        keys = get_all_keys()
+        result = []
+        
+        for key in keys:
+            result.append({
+                'id': str(key['id']),
+                'name': key['name'],
+                'key': key['masked_key'],
+                'key_type': key['key_type'],
+                'account_id': key['account_id'],
+                'admin_key_id': key['admin_key_id'],
+                'admin_name': key['admin_name'],
+                'account_email': key['account_email'],
+                'account_name': key['account_name'],
+                'organization_name': key['organization_name']
+            })
+        
+        print(f"Returning {len(result)} keys from database")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error in get_keys: {str(e)}")
+        return jsonify({'error': f'Failed to load keys: {str(e)}'}), 500
 
 @app.route('/api/keys', methods=['POST'])
 def add_key_endpoint():
@@ -746,6 +783,28 @@ def get_usage():
     
     print(f"Processed {len(admin_keys)} admin keys and {len(orphaned_projects)} orphaned project keys")
     return jsonify(results)
+
+@app.route('/api/debug')
+def debug_database():
+    """Debug endpoint to see database contents"""
+    try:
+        with get_db() as conn:
+            # Get accounts
+            cursor = conn.execute('SELECT * FROM accounts')
+            accounts = [dict(row) for row in cursor.fetchall()]
+            
+            # Get keys
+            cursor = conn.execute('SELECT * FROM api_keys')
+            keys = [dict(row) for row in cursor.fetchall()]
+            
+            return jsonify({
+                'accounts': accounts,
+                'keys': keys,
+                'total_accounts': len(accounts),
+                'total_keys': len(keys)
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("🚀 Starting OpenAI Usage Dashboard with SQLite Database...")
