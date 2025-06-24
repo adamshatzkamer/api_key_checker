@@ -1,4 +1,20 @@
-#!/usr/bin/env python3
+@app.route('/api/usage')
+def get_usage():
+    """API endpoint to fetch usage data only for admin keys, with associated project keys shown as inventory"""
+    days = request.args.get('days', 30, type=int)
+    
+    results = {}
+    all_keys = get_all_keys()
+    
+    # Group keys by account and separate admin from project keys
+    admin_keys = [key for key in all_keys if key['key_type'] == 'admin']
+    project_keys = [key for key in all_keys if key['key_type'] == 'project']
+    
+    print(f"Found {len(admin_keys)} admin keys and {len(project_keys)} project keys")
+    print("Admin keys:", [key['name'] for key in admin_keys])
+    print("Project keys:", [key['name'] for key in project_keys])
+    
+    # Process admin#!/usr/bin/env python3
 """
 OpenAI API Usage Dashboard Backend with SQLite Database
 Run this Python server to fetch real usage data from OpenAI's API
@@ -739,8 +755,10 @@ def get_usage():
     project_keys = [key for key in all_keys if key['key_type'] == 'project']
     
     print(f"Found {len(admin_keys)} admin keys and {len(project_keys)} project keys")
+    print("Admin keys:", [key['name'] for key in admin_keys])
+    print("Project keys:", [key['name'] for key in project_keys])
     
-    # Process admin keys - fetch actual usage data
+    # Process ONLY admin keys - fetch actual usage data
     for admin_key in admin_keys:
         print(f"Fetching usage for admin key: {admin_key['name']} - Account: {admin_key['account_email']}")
         
@@ -779,19 +797,13 @@ def get_usage():
         # Add small delay to avoid rate limiting
         time.sleep(0.5)
     
-    # Process orphaned project keys (no admin key association)
+    # ONLY include orphaned project keys (no admin key association) as info items
     orphaned_projects = [key for key in project_keys if not key['admin_key_id']]
     
     for orphaned_key in orphaned_projects:
-        print(f"Testing orphaned project key: {orphaned_key['name']} - Account: {orphaned_key['account_email']}")
+        print(f"Adding orphaned project key as info: {orphaned_key['name']} - Account: {orphaned_key['account_email']}")
         
-        # Test basic connectivity only (no usage data expected)
-        usage_data = fetch_openai_usage(orphaned_key['full_key'], days)
-        usage_data['usage_key_source'] = 'orphaned project key (limited access)'
-        usage_data['associated_project_keys'] = []
-        usage_data['project_key_count'] = 0
-        usage_data['note'] = 'Project key without admin association - consider linking to an admin key for usage data'
-        
+        # Don't test orphaned keys - just show them as informational
         results[orphaned_key['name']] = {
             'id': str(orphaned_key['id']),
             'name': orphaned_key['name'],
@@ -801,12 +813,15 @@ def get_usage():
             'account_name': orphaned_key['account_name'],
             'organization_name': orphaned_key['organization_name'],
             'admin_name': None,
-            **usage_data
+            'status': 'info_only',
+            'message': 'Project key without admin association - not tested for usage data',
+            'usage_key_source': 'orphaned project key (info only)',
+            'associated_project_keys': [],
+            'project_key_count': 0,
+            'note': 'This project key is not being tested. Link it to an admin key to include its usage data under that admin key.'
         }
-        
-        time.sleep(0.5)
     
-    print(f"Processed {len(admin_keys)} admin keys and {len(orphaned_projects)} orphaned project keys")
+    print(f"Processed {len(admin_keys)} admin keys and {len(orphaned_projects)} orphaned project keys (info only)")
     return jsonify(results)
 
 @app.route('/api/debug')
