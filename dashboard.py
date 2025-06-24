@@ -683,26 +683,73 @@ def fetch_openai_usage(api_key, days=30):
     
     return result
 
-def fetch_api_usage(api_key, days=30):
-    """Fetch usage data from various AI API providers"""
-    key_info = detect_key_type(api_key)
-    provider = key_info['provider']
-    key_type = key_info['type']
-    
-    print(f"Detected provider: {provider}, type: {key_type}")
-    
-    if provider == 'openai':
-        return fetch_openai_usage(api_key, days)
-    elif provider == 'anthropic':
-        return fetch_anthropic_usage(api_key, days)
-    elif provider == 'brave':
-        return fetch_brave_usage(api_key, days)
-    else:
-        return {
-            'status': 'unsupported',
-            'message': f'Unsupported API provider: {provider}',
-            'error': f'API key format not recognized: {api_key[:10]}...'
+    # Process ONLY admin keys - fetch actual usage data
+    for admin_key in admin_keys:
+        print(f"Fetching usage for admin key: {admin_key['name']} - Account: {admin_key['account_email']}")
+        
+        # Fetch usage data for admin key
+        usage_data = fetch_api_usage(admin_key['full_key'], days)
+        
+        # Find associated project keys for this admin key
+        associated_projects = [
+            {
+                'id': str(proj['id']),
+                'name': proj['name'],
+                'key': proj['masked_key']
+            }
+            for proj in project_keys 
+            if proj['admin_key_id'] == admin_key['id']
+        ]
+        
+        # Add metadata
+        usage_data['usage_key_source'] = 'admin key direct access'
+        usage_data['associated_project_keys'] = associated_projects
+        usage_data['project_key_count'] = len(associated_projects)
+        
+        # Combine admin key info with usage data - use unique key for results
+        unique_key_name = f"{admin_key['name']} - {admin_key['account_email']}"
+        results[unique_key_name] = {
+            'id': str(admin_key['id']),
+            'name': admin_key['name'],
+            'key': admin_key['masked_key'],
+            'key_type': admin_key['key_type'],
+            'account_email': admin_key['account_email'],
+            'account_name': admin_key['account_name'],
+            'organization_name': admin_key['organization_name'],
+            'admin_name': None,  # This IS the admin key
+            **usage_data
         }
+        
+        # Add small delay to avoid rate limiting
+        time.sleep(0.5)
+    
+    # ONLY include orphaned project keys (no admin key association) as info items
+    orphaned_projects = [key for key in project_keys if not key['admin_key_id']]
+    
+    for orphaned_key in orphaned_projects:
+        print(f"Adding orphaned project key as info: {orphaned_key['name']} - Account: {orphaned_key['account_email']}")
+        
+        # Don't test orphaned keys - just show them as informational
+        unique_orphan_name = f"{orphaned_key['name']} - {orphaned_key['account_email']}"
+        results[unique_orphan_name] = {
+            'id': str(orphaned_key['id']),
+            'name': orphaned_key['name'],
+            'key': orphaned_key['masked_key'],
+            'key_type': orphaned_key['key_type'],
+            'account_email': orphaned_key['account_email'],
+            'account_name': orphaned_key['account_name'],
+            'organization_name': orphaned_key['organization_name'],
+            'admin_name': None,
+            'status': 'info_only',
+            'message': 'Project key without admin association - not tested for usage data',
+            'usage_key_source': 'orphaned project key (info only)',
+            'associated_project_keys': [],
+            'project_key_count': 0,
+            'note': 'This project key is not being tested. Link it to an admin key to include its usage data under that admin key.'
+        }
+    
+    print(f"Processed {len(admin_keys)} admin keys and {len(orphaned_projects)} orphaned project keys (info only)")
+    return jsonify(results)
 
 # Flask Routes
 
