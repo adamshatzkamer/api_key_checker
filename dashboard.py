@@ -772,8 +772,9 @@ def get_usage():
         usage_data['associated_project_keys'] = associated_projects
         usage_data['project_key_count'] = len(associated_projects)
         
-        # Combine admin key info with usage data
-        results[admin_key['name']] = {
+        # Combine admin key info with usage data - use unique key for results
+        unique_key_name = f"{admin_key['name']} - {admin_key['account_email']}"
+        results[unique_key_name] = {
             'id': str(admin_key['id']),
             'name': admin_key['name'],
             'key': admin_key['masked_key'],
@@ -795,7 +796,8 @@ def get_usage():
         print(f"Adding orphaned project key as info: {orphaned_key['name']} - Account: {orphaned_key['account_email']}")
         
         # Don't test orphaned keys - just show them as informational
-        results[orphaned_key['name']] = {
+        unique_orphan_name = f"{orphaned_key['name']} - {orphaned_key['account_email']}"
+        results[unique_orphan_name] = {
             'id': str(orphaned_key['id']),
             'name': orphaned_key['name'],
             'key': orphaned_key['masked_key'],
