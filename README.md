@@ -84,7 +84,7 @@ A comprehensive web-based dashboard for monitoring and managing API keys across 
 2. **Click "Add New API Key"**
 3. **Select an account from the dropdown**
 4. **Enter key details:**
-   - **Name**: Descriptive name (e.g., "Production Key", "Development")
+   - **Name**: Descriptive name (e.g., "OpenAI Production Key", "Brave Development", "Grok DD/MM/YY", etc.)
    - **API Key**: Your actual API key
    - **Admin Association**: For project keys, link to an admin key
 5. **Test the key** (optional but recommended)
