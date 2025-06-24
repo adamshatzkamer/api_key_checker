@@ -330,10 +330,11 @@ def fetch_openai_usage(api_key, days=30):
     """Fetch usage data from OpenAI's Usage API with improved request handling"""
     start_time = int(time.time()) - (days * 24 * 60 * 60)
     
+    # Match curl headers exactly
     headers = {
         'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json',
-        'User-Agent': 'OpenAI-Dashboard/1.0'
+        'Content-Type': 'application/json'
+        # Removed User-Agent - might be causing issues
     }
     
     result = {}
@@ -350,8 +351,8 @@ def fetch_openai_usage(api_key, days=30):
         models_response = requests.get(
             'https://api.openai.com/v1/models',
             headers=headers,
-            timeout=30,  # Increased timeout
-            verify=True  # Ensure SSL verification
+            timeout=30,
+            verify=True
         )
         
         print(f"Models API response: {models_response.status_code}")
@@ -386,7 +387,7 @@ def fetch_openai_usage(api_key, days=30):
             'https://api.openai.com/v1/organization/usage/completions',
             headers=headers,
             params=usage_params,
-            timeout=30,  # Increased timeout
+            timeout=30,
             verify=True
         )
         
