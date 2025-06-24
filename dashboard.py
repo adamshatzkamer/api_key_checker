@@ -213,6 +213,21 @@ def detect_key_type(api_key):
 
 def get_error_details(error_message, status_code):
     """Map HTTP status codes to user-friendly error messages"""
+    
+    # Check for specific OpenAI permission errors
+    if "Missing scopes" in error_message or "api.model.read" in error_message:
+        return {
+            "icon": "🔐",
+            "title": "Insufficient API Key Scopes",
+            "description": "Your API key doesn't have the required permissions (scopes) for this operation.",
+            "solutions": [
+                "Create a new API key with 'All' permissions in OpenAI dashboard",
+                "Ensure your role is 'Owner' or 'Admin' in the organization",
+                "Check that the key isn't restricted to specific models/endpoints",
+                "For Usage API: Contact OpenAI support to enable usage monitoring permissions"
+            ]
+        }
+    
     error_mappings = {
         401: {
             "icon": "🔑",
@@ -222,18 +237,20 @@ def get_error_details(error_message, status_code):
                 "Check if the API key is correctly copied (no extra spaces)",
                 "Verify the key hasn't been revoked in OpenAI dashboard", 
                 "Ensure the key has billing enabled on your OpenAI account",
-                "Check if the key belongs to the correct organization"
+                "Check if the key belongs to the correct organization",
+                "Try creating a new API key with 'All' permissions"
             ]
         },
         403: {
             "icon": "🚫", 
             "title": "Permission Denied",
-            "description": "Your API key doesn't have access to the Usage API or your organization.",
+            "description": "Your API key doesn't have access to the Usage API. This is common - most OpenAI keys can't access usage data.",
             "solutions": [
-                "Upgrade to a paid OpenAI plan (Usage API requires billing)",
-                "Contact OpenAI support to enable Usage API access",
-                "Check if you're part of the correct organization",
-                "Verify your account has admin permissions for usage data"
+                "Usage API access is restricted - most API keys cannot access it",
+                "Contact OpenAI support specifically requesting Usage API access",
+                "Consider using OpenAI's web dashboard for usage monitoring instead",
+                "For now, use this dashboard to test key validity and organize your keys",
+                "Note: Even 'admin' keys often don't have Usage API access"
             ]
         },
         429: {
@@ -263,10 +280,10 @@ def get_error_details(error_message, status_code):
             "title": "Endpoint Not Found",
             "description": "The Usage API endpoint doesn't exist or has changed.",
             "solutions": [
-                "Check if your account has access to the new Usage API",
-                "Verify you're on a paid OpenAI plan",
-                "Update to the latest API version",
-                "Contact support if you believe this is an error"
+                "Usage API access is highly restricted by OpenAI",
+                "Most API keys cannot access usage endpoints",
+                "Use OpenAI's web dashboard for usage monitoring",
+                "This dashboard can still help organize and test your keys"
             ]
         }
     }
@@ -284,7 +301,7 @@ def get_error_details(error_message, status_code):
     })
 
 def fetch_openai_usage(api_key, days=30):
-    """Fetch usage data from OpenAI's Usage API with fallback"""
+    """Fetch usage data from OpenAI's Usage API with graceful fallback"""
     start_time = int(time.time()) - (days * 24 * 60 * 60)
     
     headers = {
@@ -294,7 +311,7 @@ def fetch_openai_usage(api_key, days=30):
     
     result = {}
     
-    # Test basic authentication first
+    # Test basic authentication first with models endpoint
     try:
         print(f"Testing basic API access...")
         models_response = requests.get(
@@ -311,6 +328,7 @@ def fetch_openai_usage(api_key, days=30):
             return result
         
         print(f"✓ Basic API access works")
+        result['models_accessible'] = True
         
     except requests.exceptions.RequestException as e:
         result['error'] = f"Network error during basic test: {str(e)}"
@@ -318,7 +336,7 @@ def fetch_openai_usage(api_key, days=30):
         result['status'] = 'error'
         return result
     
-    # Now try Usage API
+    # Try Usage API (expect this to fail for most keys)
     usage_params = {
         'start_time': start_time,
         'bucket_width': '1d',
@@ -326,7 +344,7 @@ def fetch_openai_usage(api_key, days=30):
     }
     
     try:
-        print(f"Testing Usage API access...")
+        print(f"Testing Usage API access (this often fails)...")
         usage_response = requests.get(
             'https://api.openai.com/v1/organization/usage/completions',
             headers=headers,
@@ -335,62 +353,69 @@ def fetch_openai_usage(api_key, days=30):
         )
         
         if usage_response.status_code == 200:
-            print(f"✓ Usage API access works")
+            print(f"✓ Usage API access works (rare!)")
             result['usage'] = usage_response.json()
             result['status'] = 'success'
         else:
-            print(f"✗ Usage API failed: {usage_response.status_code}")
-            # If Usage API fails but basic API works, show partial success
+            print(f"✗ Usage API failed: {usage_response.status_code} (this is normal)")
             result['usage_error'] = {
                 'error': f"Usage API failed: {usage_response.status_code} - {usage_response.text}",
                 'error_details': get_error_details(usage_response.text, usage_response.status_code)
             }
-            result['status'] = 'partial'  # New status for partial success
+            # Don't set status to partial yet - continue testing
             
     except requests.exceptions.RequestException as e:
+        print(f"✗ Usage API network error (normal): {str(e)}")
         result['usage_error'] = {
             'error': f"Usage API network error: {str(e)}",
             'error_details': get_error_details(str(e), None)
         }
-        result['status'] = 'partial'
     
-    # Try Costs API only if we got this far
-    if result.get('status') in ['success', 'partial']:
-        costs_params = {
-            'start_time': start_time,
-            'bucket_width': '1d',
-            'limit': days
-        }
+    # Try Costs API (also expect this to fail)
+    costs_params = {
+        'start_time': start_time,
+        'bucket_width': '1d',
+        'limit': days
+    }
+    
+    try:
+        print(f"Testing Costs API access (this often fails)...")
+        costs_response = requests.get(
+            'https://api.openai.com/v1/organization/costs',
+            headers=headers,
+            params=costs_params,
+            timeout=10
+        )
         
-        try:
-            print(f"Testing Costs API access...")
-            costs_response = requests.get(
-                'https://api.openai.com/v1/organization/costs',
-                headers=headers,
-                params=costs_params,
-                timeout=10
-            )
-            
-            if costs_response.status_code == 200:
-                print(f"✓ Costs API access works")
-                result['costs'] = costs_response.json()
-            else:
-                print(f"✗ Costs API failed: {costs_response.status_code}")
-                result['costs_error'] = {
-                    'error': f"Costs API failed: {costs_response.status_code} - {costs_response.text}",
-                    'error_details': get_error_details(costs_response.text, costs_response.status_code)
-                }
-                
-        except requests.exceptions.RequestException as e:
+        if costs_response.status_code == 200:
+            print(f"✓ Costs API access works (rare!)")
+            result['costs'] = costs_response.json()
+            if result.get('status') != 'success':
+                result['status'] = 'partial'  # Has costs but maybe not usage
+        else:
+            print(f"✗ Costs API failed: {costs_response.status_code} (this is normal)")
             result['costs_error'] = {
-                'error': f"Costs API network error: {str(e)}",
-                'error_details': get_error_details(str(e), None)
+                'error': f"Costs API failed: {costs_response.status_code} - {costs_response.text}",
+                'error_details': get_error_details(costs_response.text, costs_response.status_code)
             }
+            
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Costs API network error (normal): {str(e)}")
+        result['costs_error'] = {
+            'error': f"Costs API network error: {str(e)}",
+            'error_details': get_error_details(str(e), None)
+        }
     
-    # If we only have basic API access, that's still something
-    if result.get('status') is None:
-        result['status'] = 'basic_only'
-        result['message'] = "API key works for basic calls but not Usage/Costs APIs"
+    # Determine final status
+    if result.get('status') != 'success':
+        if result.get('models_accessible'):
+            if result.get('usage') or result.get('costs'):
+                result['status'] = 'partial'
+            else:
+                result['status'] = 'basic_only'
+                result['message'] = "API key works for basic calls but not Usage/Costs APIs (this is normal)"
+        else:
+            result['status'] = 'error'
     
     return result
 
