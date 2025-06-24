@@ -99,22 +99,8 @@ def init_database():
             )
         ''')
         
-        # Create api_keys table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS api_keys (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id INTEGER,
-                name TEXT NOT NULL,
-                key_value TEXT NOT NULL,
-                provider TEXT,
-                key_type TEXT,
-                is_valid BOOLEAN DEFAULT NULL,
-                last_checked TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
-            )
-        ''')
+        # Database already exists with correct schema
+        pass
         
         # Create usage_data table for storing API usage information
         cursor.execute('''
@@ -353,7 +339,7 @@ def get_keys():
         keys = []
         for row in cursor.fetchall():
             key_data = dict(row)
-            key_data['masked_key'] = mask_api_key(key_data['key_value'])
+            key_data['masked_key'] = mask_api_key(key_data['full_key'])
             keys.append(key_data)
         
         return jsonify(keys)
@@ -363,29 +349,28 @@ def create_key():
     """Create a new API key"""
     data = request.get_json()
     
-    if not data or 'name' not in data or 'key_value' not in data:
-        return jsonify({'error': 'Name and key_value are required'}), 400
+    if not data or 'name' not in data or 'full_key' not in data:
+        return jsonify({'error': 'Name and full_key are required'}), 400
     
     try:
         # Detect key type
-        key_info = detect_key_type(data['key_value'])
+        key_info = detect_key_type(data['full_key'])
         
         # Validate key if possible
-        validation_result = validate_api_key(data['key_value'], key_info['provider'])
+        validation_result = validate_api_key(data['full_key'], key_info['provider'])
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO api_keys (account_id, name, key_value, provider, key_type, is_valid, last_checked)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO api_keys (account_id, name, full_key, provider, key_type, masked_key, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ''', (
                 data.get('account_id'),
                 data['name'],
-                data['key_value'],
+                data['full_key'],
                 key_info['provider'],
                 key_info['type'],
-                validation_result.get('valid'),
-                datetime.now().isoformat()
+                mask_api_key(data['full_key'])
             ))
             conn.commit()
             
@@ -398,7 +383,7 @@ def create_key():
             ''', (key_id,))
             
             key_data = dict(cursor.fetchone())
-            key_data['masked_key'] = mask_api_key(key_data['key_value'])
+            key_data['masked_key'] = mask_api_key(key_data['full_key'])
             
             return jsonify(key_data), 201
     except Exception as e:
@@ -434,17 +419,17 @@ def update_key(key_id):
                 update_fields.append('account_id = ?')
                 update_values.append(data['account_id'])
             
-            if 'key_value' in data:
+            if 'full_key' in data:
                 # If key value changed, re-detect type and validate
-                key_info = detect_key_type(data['key_value'])
-                validation_result = validate_api_key(data['key_value'], key_info['provider'])
+                key_info = detect_key_type(data['full_key'])
+                validation_result = validate_api_key(data['full_key'], key_info['provider'])
                 
-                update_fields.extend(['key_value = ?', 'provider = ?', 'key_type = ?', 'is_valid = ?', 'last_checked = ?'])
+                update_fields.extend(['full_key = ?', 'provider = ?', 'key_type = ?', 'masked_key = ?', 'updated_at = ?'])
                 update_values.extend([
-                    data['key_value'],
+                    data['full_key'],
                     key_info['provider'],
                     key_info['type'],
-                    validation_result.get('valid'),
+                    mask_api_key(data['full_key']),
                     datetime.now().isoformat()
                 ])
             
@@ -467,7 +452,7 @@ def update_key(key_id):
             ''', (key_id,))
             
             key_data = dict(cursor.fetchone())
-            key_data['masked_key'] = mask_api_key(key_data['key_value'])
+            key_data['masked_key'] = mask_api_key(key_data['full_key'])
             
             return jsonify(key_data)
     except Exception as e:
@@ -502,7 +487,7 @@ def validate_key_endpoint(key_id):
                 return jsonify({'error': 'API key not found'}), 404
             
             key_data = dict(key_data)
-            validation_result = validate_api_key(key_data['key_value'], key_data['provider'])
+            validation_result = validate_api_key(key_data['full_key'], key_data['provider'])
             
             # Update validation status in database
             cursor.execute('''
