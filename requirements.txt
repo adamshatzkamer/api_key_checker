@@ -1,0 +1,14 @@
+# OpenAI API Usage Dashboard Requirements
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+Flask==3.0.0
+flask-cors==4.0.0
+
+# HTTP Client for API calls
+requests==2.31.0
+
+# Optional: For better development experience
+python-dotenv==1.0.0
+
+# Note: SQLite is included with Python, no additional package needed
